@@ -43,4 +43,26 @@ async function generateInstructorActivationCode() {
   throw new Error('Could not generate a unique instructor activation code.');
 }
 
-module.exports = { generateUniqueCode, generateInstructorActivationCode };
+// INS-XXXX-XXXX -- the single-use code an Admin generates for one new
+// instructor to register with (System Revisions item 19). Checked against
+// both instructor code tables so it can never equal an existing
+// advisers.activation_code either (a self-registered instructor's row
+// stores the code it registered with there).
+async function generateInstructorRegistrationCode() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = `INS-${randomSegment(4)}-${randomSegment(4)}`;
+    const existing = await pool.query(
+      `SELECT 1 FROM instructor_registration_codes WHERE code = $1
+       UNION ALL SELECT 1 FROM advisers WHERE activation_code = $1`,
+      [code],
+    );
+    if (existing.rows.length === 0) return code;
+  }
+  throw new Error('Could not generate a unique instructor registration code.');
+}
+
+module.exports = {
+  generateUniqueCode,
+  generateInstructorActivationCode,
+  generateInstructorRegistrationCode,
+};

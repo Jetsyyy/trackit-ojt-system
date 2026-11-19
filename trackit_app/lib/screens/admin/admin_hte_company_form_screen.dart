@@ -215,9 +215,7 @@ class _AdminHteCompanyFormScreenState extends State<AdminHteCompanyFormScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Email is required' : null,
+                  decoration: const InputDecoration(labelText: 'Email (optional)'),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

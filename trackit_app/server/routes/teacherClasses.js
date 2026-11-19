@@ -1,11 +1,14 @@
 const express = require('express');
 const pool = require('../db');
 const { requireInstructorAuth } = require('../middleware/instructorAuth');
-const { generateUniqueCode } = require('../utils/activationCode');
 
 const router = express.Router();
 router.use(requireInstructorAuth);
 
+// The instructor's assigned sections. Sections are created by the Admin
+// and assigned when approving the instructor (System Revisions item 19:
+// "Newly registered instructors will not select or set their own
+// section"), so there is no create route here.
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
@@ -31,41 +34,6 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Get classes error:', error);
     res.status(500).json({ success: false, message: 'Failed to load classes.' });
-  }
-});
-
-router.post('/', async (req, res) => {
-  try {
-    const { program, section, academicYear } = req.body;
-    if (!program || !section || !academicYear) {
-      return res.status(400).json({
-        success: false,
-        message: 'program, section, and academicYear are required.',
-      });
-    }
-
-    const code = await generateUniqueCode();
-    const result = await pool.query(
-      `INSERT INTO instructor_classes (instructor_id, program, section, academic_year, activation_code)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [req.instructorId, program.trim(), section.trim(), academicYear.trim(), code],
-    );
-    const row = result.rows[0];
-    res.status(201).json({
-      success: true,
-      class: {
-        id: Number(row.id),
-        program: row.program,
-        section: row.section,
-        academicYear: row.academic_year,
-        activationCode: row.activation_code,
-        studentCount: 0,
-      },
-    });
-  } catch (error) {
-    console.error('Create class error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create class.' });
   }
 });
 

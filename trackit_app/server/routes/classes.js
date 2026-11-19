@@ -16,7 +16,7 @@ router.get('/lookup', async (req, res) => {
     const result = await pool.query(
       `SELECT c.program, c.section, c.academic_year, a.name AS instructor_name
        FROM instructor_classes c
-       JOIN advisers a ON a.id = c.instructor_id
+       LEFT JOIN advisers a ON a.id = c.instructor_id AND a.approval_status = 'approved'
        WHERE c.activation_code = $1`,
       [code],
     );
@@ -25,6 +25,14 @@ router.get('/lookup', async (req, res) => {
     }
 
     const row = result.rows[0];
+    // Registration needs an instructor to approve it (routes/auth.js).
+    if (!row.instructor_name) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'This section has no instructor assigned yet. Please contact your OJT coordinator.',
+      });
+    }
     res.json({
       success: true,
       class: {

@@ -9,34 +9,34 @@ const {
   getCurrentAcademicYear,
 } = require('../utils/classHelpers');
 const { toCsv } = require('../utils/csv');
+const { getCreditedHoursMap } = require('../utils/creditedHours');
+const bcrypt = require('bcrypt');
+const { nextAcademicYear } = require('../utils/classHelpers');
+const { loadDirectoryWithPlacements } = require('../utils/hteDirectory');
+const { sendHteReport } = require('../utils/hteReport');
 
 const router = express.Router();
 router.use(requireAdminAuth);
 
 // Same shape as adminClasses.js's loadClassStudents, plus real completed/
-// required hours (from attendance_records / students.required_hours) --
+// required hours (approved weekly DTRs / students.required_hours) --
 // Archive's student table shows a "completed / required hrs" column that
 // Class Management's own view doesn't, so this isn't reused as-is.
 async function loadArchivedClassStudents(classId) {
   const result = await pool.query(
     `SELECT s.id, s.name, s.student_number, s.avatar_url, s.required_hours,
             sp.company_name, sp.company_supervisor_name, sp.emergency_contact,
-            lh.last_login,
-            COALESCE(ar.completed_hours, 0) AS completed_hours
+            lh.last_login
      FROM students s
      JOIN student_profiles sp ON sp.student_id = s.id
      LEFT JOIN LATERAL (
        SELECT MAX(login_at) AS last_login FROM login_history WHERE student_id = s.id
      ) lh ON true
-     LEFT JOIN LATERAL (
-       SELECT SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600.0) AS completed_hours
-       FROM attendance_records
-       WHERE student_id = s.id AND clock_out IS NOT NULL
-     ) ar ON true
      WHERE sp.class_id = $1
      ORDER BY s.name ASC`,
     [classId],
   );
+  const hoursByStudent = await getCreditedHoursMap(result.rows.map((row) => row.id));
   return result.rows.map((row) => ({
     id: Number(row.id),
     name: row.name,
@@ -46,7 +46,7 @@ async function loadArchivedClassStudents(classId) {
     status: computeStudentStatus(row.company_name, row.last_login),
     contactPerson: row.emergency_contact,
     ojtSupervisor: row.company_supervisor_name,
-    completedHours: Math.round(Number(row.completed_hours) * 10) / 10,
+    completedHours: Math.round(hoursByStudent.get(Number(row.id)).completedHours * 10) / 10,
     requiredHours: Number(row.required_hours),
   }));
 }
@@ -57,7 +57,7 @@ router.get('/academic-years', async (req, res) => {
     const result = await pool.query(
       `SELECT academic_year, COUNT(*) AS class_count
        FROM instructor_classes
-       WHERE academic_year IS DISTINCT FROM $1
+       WHERE $1::text IS NULL OR academic_year < $1
        GROUP BY academic_year
        ORDER BY academic_year DESC`,
       [currentYear],
@@ -327,6 +327,161 @@ router.get('/export', async (req, res) => {
   } catch (error) {
     console.error('Export archive error:', error);
     res.status(500).json({ success: false, message: 'Failed to export archived data.' });
+  }
+});
+
+// ---------- Archive the academic year (System Revisions item 20) ----------
+
+// The active year and whether it can be archived, for the Archive screen.
+router.get('/status', async (req, res) => {
+  try {
+    const activeYear = await getCurrentAcademicYear();
+    const archived = activeYear
+      ? await pool.query('SELECT 1 FROM hte_archives WHERE academic_year = $1', [activeYear])
+      : { rows: [] };
+    res.json({
+      success: true,
+      activeYear,
+      nextYear: nextAcademicYear(activeYear),
+      alreadyArchived: archived.rows.length > 0,
+    });
+  } catch (error) {
+    console.error('Get archive status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load archive status.' });
+  }
+});
+
+// Body: { email, password } -- the Admin re-enters their own login to
+// confirm. Saves a snapshot of the active year's HTE Directory with each
+// company's students, then makes the next academic year active
+// (e.g. 2026-2027 -> 2027-2028).
+router.post('/academic-year', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const email = (req.body.email || '').toString().toLowerCase().trim();
+    const password = (req.body.password || '').toString();
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Enter your admin email and password to confirm.' });
+    }
+    const adminResult = await pool.query('SELECT id, email, password_hash FROM admins WHERE id = $1', [
+      req.adminId,
+    ]);
+    const admin = adminResult.rows[0];
+    const valid =
+      admin && admin.email === email && (await bcrypt.compare(password, admin.password_hash));
+    if (!valid) {
+      return res
+        .status(401)
+        .json({ success: false, message: 'Email or password is incorrect. Nothing was archived.' });
+    }
+
+    const activeYear = await getCurrentAcademicYear();
+    const nextYear = nextAcademicYear(activeYear);
+    if (!activeYear || !nextYear) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'There is no active academic year to archive.' });
+    }
+
+    const companies = await loadDirectoryWithPlacements({ academicYear: activeYear });
+    const snapshot = {
+      academicYear: activeYear,
+      companies,
+      totals: {
+        companies: companies.length,
+        companiesWithStudents: companies.filter((c) => c.students.length > 0).length,
+        students: companies.reduce((sum, c) => sum + c.students.length, 0),
+      },
+    };
+
+    await client.query('BEGIN');
+    const inserted = await client.query(
+      `INSERT INTO hte_archives (academic_year, archived_by, snapshot)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (academic_year) DO NOTHING
+       RETURNING id`,
+      [activeYear, req.adminId, JSON.stringify(snapshot)],
+    );
+    if (inserted.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res
+        .status(409)
+        .json({ success: false, message: `Academic Year ${activeYear} is already archived.` });
+    }
+    await client.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('active_academic_year', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+      [nextYear],
+    );
+    await client.query('COMMIT');
+
+    res.json({ success: true, archivedYear: activeYear, activeYear: nextYear, totals: snapshot.totals });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Archive academic year error:', error);
+    res.status(500).json({ success: false, message: 'Failed to archive the academic year.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/hte-snapshots', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT a.academic_year, a.archived_at, a.snapshot -> 'totals' AS totals, ad.name AS archived_by_name
+       FROM hte_archives a LEFT JOIN admins ad ON ad.id = a.archived_by
+       ORDER BY a.academic_year DESC`,
+    );
+    res.json({
+      success: true,
+      snapshots: result.rows.map((r) => ({
+        academicYear: r.academic_year,
+        archivedAt: r.archived_at,
+        archivedBy: r.archived_by_name,
+        totals: r.totals,
+      })),
+    });
+  } catch (error) {
+    console.error('Get HTE snapshots error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load archived HTE records.' });
+  }
+});
+
+// One archived year's HTE Directory: JSON, or ?format=xlsx|pdf.
+router.get('/hte-snapshots/:year', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT snapshot, archived_at FROM hte_archives WHERE academic_year = $1',
+      [req.params.year],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'That academic year is not archived.' });
+    }
+    const snapshot = result.rows[0].snapshot;
+    const location = (req.query.location || '').toString().trim();
+    const companies = snapshot.companies.filter(
+      (c) => !location || c.location === location || c.region === location,
+    );
+    if (req.query.format === 'xlsx' || req.query.format === 'pdf') {
+      return await sendHteReport(res, {
+        format: req.query.format,
+        companies,
+        title: `Archived HTE Directory - Academic Year ${snapshot.academicYear}`,
+        subtitle: [
+          `Archived ${new Date(result.rows[0].archived_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}`,
+          location ? `Location: ${location}` : 'All locations',
+        ].join('  |  '),
+        fileBase: `HTE-Archive-${snapshot.academicYear}${location ? `-${location}` : ''}`,
+      });
+    }
+    res.json({ success: true, academicYear: snapshot.academicYear, totals: snapshot.totals, companies });
+  } catch (error) {
+    console.error('Get HTE snapshot error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to load the archived year.' });
+    }
   }
 });
 

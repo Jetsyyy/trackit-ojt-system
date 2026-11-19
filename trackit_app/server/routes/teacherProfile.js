@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const path = require('path');
 const pool = require('../db');
+const { recordActivity, recentActivity } = require('../utils/accountActivity');
 const { requireInstructorAuth } = require('../middleware/instructorAuth');
 
 const router = express.Router();
@@ -27,7 +28,8 @@ const upload = multer({
 router.get('/', async (req, res) => {
   try {
     const instructorResult = await pool.query(
-      'SELECT name, email, position, photo_url FROM advisers WHERE id = $1',
+      `SELECT name, email, position, photo_url, status, last_login_at, password_changed_at
+       FROM advisers WHERE id = $1`,
       [req.instructorId],
     );
     if (instructorResult.rows.length === 0) {
@@ -55,6 +57,10 @@ router.get('/', async (req, res) => {
         photoUrl: instructor.photo_url,
         programs,
         sections,
+        status: instructor.status || 'active',
+        lastLoginAt: instructor.last_login_at,
+        passwordChangedAt: instructor.password_changed_at,
+        activity: await recentActivity('instructor', req.instructorId),
       },
     });
   } catch (error) {
@@ -75,6 +81,7 @@ router.post('/avatar', upload.single('avatar'), async (req, res) => {
       avatarUrl,
       req.instructorId,
     ]);
+    await recordActivity('instructor', req.instructorId, 'Changed profile photo', 'Profile updated');
     res.json({ success: true, avatarUrl });
   } catch (error) {
     console.error('Upload instructor avatar error:', error);
@@ -110,10 +117,11 @@ router.patch('/password', async (req, res) => {
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    await pool.query('UPDATE advisers SET password_hash = $1 WHERE id = $2', [
+    await pool.query('UPDATE advisers SET password_hash = $1, password_changed_at = now() WHERE id = $2', [
       newHash,
       req.instructorId,
     ]);
+    await recordActivity('instructor', req.instructorId, 'Changed password', 'Security update');
     res.json({ success: true });
   } catch (error) {
     console.error('Change instructor password error:', error);
@@ -152,6 +160,7 @@ router.patch('/email', async (req, res) => {
       normalizedEmail,
       req.instructorId,
     ]);
+    await recordActivity('instructor', req.instructorId, 'Changed email', normalizedEmail);
     res.json({ success: true, email: normalizedEmail });
   } catch (error) {
     console.error('Change instructor email error:', error);

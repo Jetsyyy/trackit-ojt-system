@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/desk_ui.dart';
+import 'desk/teacher_notifications_desk.dart';
 import '../../models/announcement.dart';
 import '../../services/teacher_announcements_service.dart';
 import '../../services/teacher_classes_service.dart';
@@ -31,6 +33,13 @@ class _TeacherNotificationsTabNavigatorState
 
   @override
   Widget build(BuildContext context) {
+    if (isDeskLayout(context)) {
+      return TeacherNotificationsDesk(
+        notificationsService: widget.notificationsService,
+        announcementsService: widget.announcementsService,
+        classesService: widget.classesService,
+      );
+    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {

@@ -18,7 +18,15 @@ abstract class OjtRequirementsService {
     required String fileName,
     required String contentType,
   });
+
+  /// When the student said the final documents are ready (null = not yet).
+  Future<DateTime?> getFinalDocumentsReadyAt();
+
+  /// "I have all the Documents Ready": tells the instructor; returns when.
+  Future<DateTime?> markFinalDocumentsReady();
 }
+
+DateTime? _parseDate(Object? value) => value is String ? DateTime.parse(value) : null;
 
 class HttpOjtRequirementsService implements OjtRequirementsService {
   final ApiClient client;
@@ -51,6 +59,18 @@ class HttpOjtRequirementsService implements OjtRequirementsService {
     );
     return getPhases();
   }
+
+  @override
+  Future<DateTime?> getFinalDocumentsReadyAt() async {
+    final response = await client.get('/api/requirements/final-ready');
+    return _parseDate(response['readyAt']);
+  }
+
+  @override
+  Future<DateTime?> markFinalDocumentsReady() async {
+    final response = await client.post('/api/requirements/final-ready', body: const {});
+    return _parseDate(response['readyAt']);
+  }
 }
 
 class MockOjtRequirementsService implements OjtRequirementsService {
@@ -61,10 +81,18 @@ class MockOjtRequirementsService implements OjtRequirementsService {
     _recomputePhaseStatuses();
   }
 
+  DateTime? _finalReadyAt;
+
   @override
   Future<List<OjtRequirementPhase>> getPhases() async {
     return List.unmodifiable(_phases);
   }
+
+  @override
+  Future<DateTime?> getFinalDocumentsReadyAt() async => _finalReadyAt;
+
+  @override
+  Future<DateTime?> markFinalDocumentsReady() async => _finalReadyAt ??= DateTime.now();
 
   @override
   Future<List<OjtRequirementPhase>> submitDocument({

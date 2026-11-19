@@ -1,6 +1,9 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
+const { getCurrentAcademicYear } = require('../utils/classHelpers');
+const { regionOf, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
+const { sendHteReport } = require('../utils/hteReport');
 
 const router = express.Router();
 router.use(requireAdminAuth);
@@ -33,33 +36,96 @@ function toCompanyJson(row) {
   };
 }
 
+// Directory with each company's students (System Revisions item 17) for
+// ?academicYear= (default: the active year). ?location= matches a city
+// or a region (e.g. "Metro Manila"); ?search= also matches student names.
 router.get('/', async (req, res) => {
   try {
-    const { search, industry, location } = req.query;
-    const conditions = [];
-    const params = [];
-    if (search) {
-      params.push(`%${search.toString().toLowerCase()}%`);
-      conditions.push(`(LOWER(c.name) LIKE $${params.length} OR LOWER(c.industry) LIKE $${params.length})`);
+    const academicYear = (req.query.academicYear || '').toString().trim() || (await getCurrentAcademicYear());
+    let companies = await loadDirectoryWithPlacements({
+      academicYear,
+      location: req.query.location,
+      search: req.query.search,
+    });
+    if (req.query.industry) {
+      companies = companies.filter((c) => c.industry === req.query.industry.toString());
     }
-    if (industry) {
-      params.push(industry.toString());
-      conditions.push(`c.industry = $${params.length}`);
-    }
-    if (location) {
-      params.push(location.toString());
-      conditions.push(`c.location = $${params.length}`);
-    }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const result = await pool.query(
-      `${SELECT_WITH_CONTACTS} ${where} GROUP BY c.id ORDER BY c.name ASC`,
-      params,
-    );
-    res.json({ success: true, companies: result.rows.map(toCompanyJson) });
+    res.json({ success: true, academicYear, companies });
   } catch (error) {
     console.error('Get admin HTE companies error:', error);
     res.status(500).json({ success: false, message: 'Failed to load companies.' });
+  }
+});
+
+// Filter options for the directory and its reports: regions (Metro
+// Manila, Laguna, ...) and exact city locations, each with company count.
+router.get('/locations', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT location, COUNT(*)::int AS count FROM hte_companies GROUP BY location ORDER BY location`,
+    );
+    const regions = new Map();
+    for (const row of result.rows) {
+      const region = regionOf(row.location);
+      regions.set(region, (regions.get(region) || 0) + row.count);
+    }
+    res.json({
+      success: true,
+      regions: [...regions.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      locations: result.rows
+        .filter((r) => r.location)
+        .map((r) => ({ name: r.location, region: regionOf(r.location), count: r.count })),
+    });
+  } catch (error) {
+    console.error('Get HTE locations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load locations.' });
+  }
+});
+
+// Downloadable report (System Revisions items 18, 22):
+// ?format=xlsx|pdf &location= &academicYear=
+router.get('/report', async (req, res) => {
+  try {
+    const format = req.query.format === 'pdf' ? 'pdf' : 'xlsx';
+    const academicYear = (req.query.academicYear || '').toString().trim() || (await getCurrentAcademicYear());
+    // location / sections may each be a comma-separated list (multi-select
+    // filters on the HTE Directory page). type=info leaves the students out.
+    const location = (req.query.location || '').toString().trim();
+    const locations = location.split(',').map((s) => s.trim()).filter(Boolean);
+    const sections = (req.query.sections || '').toString().split(',').map((s) => s.trim()).filter(Boolean);
+    const withStudents = req.query.type !== 'info';
+    let companies = await loadDirectoryWithPlacements({
+      academicYear,
+      location: locations.length === 1 ? locations[0] : '',
+    });
+    if (locations.length > 1) {
+      companies = companies.filter((c) => locations.some((l) => c.location === l || c.region === l));
+    }
+    if (sections.length > 0) {
+      companies = companies.map((c) => ({
+        ...c,
+        students: c.students.filter((s) => sections.includes(`${s.program} - ${s.section}`)),
+      }));
+    }
+    await sendHteReport(res, {
+      format,
+      companies,
+      withStudents,
+      title: 'HTE Directory Report',
+      subtitle: [
+        `Academic Year ${academicYear || '-'}`,
+        location ? `Location: ${locations.join(', ')}` : 'All locations',
+        sections.length ? `Sections: ${sections.join(', ')}` : null,
+      ].filter(Boolean).join('  |  '),
+      fileBase: `HTE-Report-${academicYear || 'all'}${location ? `-${location}` : ''}`,
+    });
+  } catch (error) {
+    console.error('HTE report error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Failed to generate the report.' });
+    }
   }
 });
 
@@ -67,10 +133,10 @@ router.post('/', async (req, res) => {
   try {
     const { name, industry, location, address, email, website, dateAccredited, contacts } =
       req.body;
-    if (!name || !industry || !location || !address || !email) {
+    if (!name || !industry || !location || !address) {
       return res.status(400).json({
         success: false,
-        message: 'name, industry, location, address, and email are required.',
+        message: 'name, industry, location, and address are required.',
       });
     }
 
@@ -82,7 +148,7 @@ router.post('/', async (req, res) => {
         industry.trim(),
         location.trim(),
         address.trim(),
-        email.trim(),
+        email ? email.toString().trim() : null,
         website ? website.toString().trim() : null,
         dateAccredited || null,
       ],
@@ -119,24 +185,24 @@ router.patch('/:id', async (req, res) => {
 
     const { name, industry, location, address, email, website, dateAccredited, contacts } =
       req.body;
-    if (!name || !industry || !location || !address || !email) {
+    if (!name || !industry || !location || !address) {
       return res.status(400).json({
         success: false,
-        message: 'name, industry, location, address, and email are required.',
+        message: 'name, industry, location, and address are required.',
       });
     }
 
     await pool.query(
       `UPDATE hte_companies
        SET name = $1, industry = $2, location = $3, address = $4, email = $5,
-           website = $6, date_accredited = $7
+           website = $6, date_accredited = $7, source = 'admin'
        WHERE id = $8`,
       [
         name.trim(),
         industry.trim(),
         location.trim(),
         address.trim(),
-        email.trim(),
+        email ? email.toString().trim() : null,
         website ? website.toString().trim() : null,
         dateAccredited || null,
         companyId,

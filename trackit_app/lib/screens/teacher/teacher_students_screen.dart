@@ -2,28 +2,36 @@ import 'package:flutter/material.dart';
 import '../../models/instructor_class.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/ojt_stage.dart';
+import '../../models/student_registration_request.dart';
 import '../../models/teacher_student_summary.dart';
+import '../../services/api_client.dart';
 import '../../services/teacher_classes_service.dart';
 import '../../services/teacher_students_service.dart';
 import '../../utils/app_colors.dart';
-import '../../widgets/common/app_header.dart';
-import '../../widgets/common/empty_state_view.dart';
-import '../../widgets/common/skeleton_list_tile.dart';
-import '../../widgets/teacher/class_info_card.dart';
-import '../../widgets/teacher/create_class_card.dart';
-import '../../widgets/teacher/teacher_student_list_tile.dart';
-import '../../widgets/teacher/teacher_summary_tile.dart';
+import '../../utils/file_download.dart';
+import '../../widgets/common/desk_ui.dart';
+import 'desk/teacher_students_desk.dart';
+import 'teacher_registration_requests_screen.dart';
 
 class TeacherStudentsScreen extends StatefulWidget {
   final TeacherClassesService classesService;
   final TeacherStudentsService studentsService;
   final ValueChanged<int> onOpenStudent;
 
+  /// Opens Registration Requests; the list reloads when it returns, since
+  /// approved students join the roster.
+  final Future<void> Function() onOpenRequests;
+
+  /// Re-fetches when this fires (tab reopened, requests decided elsewhere).
+  final Listenable? reloadSignal;
+
   const TeacherStudentsScreen({
     super.key,
     required this.classesService,
     required this.studentsService,
     required this.onOpenStudent,
+    required this.onOpenRequests,
+    this.reloadSignal,
   });
 
   @override
@@ -34,7 +42,6 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
   List<InstructorClass> _classes = [];
   List<TeacherStudentSummary> _students = [];
   bool _loading = true;
-  String _query = '';
   String? _companyFilter; // null = All, 'none' = No Company, else a name
   OjtStage? _stageFilter;
   OjtProgressStatus? _progressFilter;
@@ -44,36 +51,119 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
   @override
   void initState() {
     super.initState();
+    widget.reloadSignal?.addListener(_load);
     _load();
   }
+
+  @override
+  void dispose() {
+    widget.reloadSignal?.removeListener(_load);
+    super.dispose();
+  }
+
+  List<StudentRegistrationRequest> _requests = [];
 
   Future<void> _load() async {
     final results = await Future.wait([
       widget.classesService.getClasses(),
       widget.studentsService.getStudents(),
+      widget.studentsService.getRegistrationRequests(),
     ]);
     if (!mounted) return;
     setState(() {
       _classes = results[0] as List<InstructorClass>;
       _students = results[1] as List<TeacherStudentSummary>;
+      _requests = results[2] as List<StudentRegistrationRequest>;
       _loading = false;
     });
   }
 
-  Future<void> _refresh() => _load();
-
-  Future<void> _createClass({
-    required String program,
-    required String section,
-    required String academicYear,
-  }) async {
-    await widget.classesService.createClass(
-      program: program,
-      section: section,
-      academicYear: academicYear,
-    );
+  // Desktop inline Approve / Remove. Removing asks for a reason, since the
+  // student is told why they were declined.
+  Future<void> _decide(StudentRegistrationRequest request, bool approve) async {
+    String? reason;
+    if (!approve) {
+      reason = await showDialog<String>(
+        context: context,
+        builder: (context) => DeclineRegistrationDialog(name: request.name),
+      );
+      if (reason == null) return;
+    }
+    try {
+      await widget.studentsService.decideRegistration(
+        studentId: request.id,
+        approve: approve,
+        reason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(approve
+              ? '${request.name} was approved and added to your section.'
+              : '${request.name}\'s registration was declined.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is ApiException ? e.message : 'Could not save your decision.'),
+          backgroundColor: AppColors.statRedIcon,
+        ),
+      );
+    }
     await _load();
   }
+
+  bool get _filtersActive =>
+      _companyFilter != null || _stageFilter != null || _progressFilter != null;
+
+  bool _matchesFilters(TeacherStudentSummary s) {
+    final matchesCompany = _companyFilter == null
+        ? true
+        : _companyFilter == 'none'
+            ? s.companyName == null
+            : s.companyName == _companyFilter;
+    final matchesStage = _stageFilter == null || s.stage == _stageFilter;
+    final matchesProgress = _progressFilter == null || s.progressStatus == _progressFilter;
+    return matchesCompany && matchesStage && matchesProgress;
+  }
+
+  bool _exporting = false;
+
+  // System Revisions item 14: records of every assigned student.
+  Future<void> _downloadRecords(String format) async {
+    setState(() => _exporting = true);
+    try {
+      final file = await widget.studentsService.exportRecords(format: format);
+      final saved = downloadBytes(
+        filename: file.filename ?? 'OJT-Student-Records.$format',
+        bytes: file.bytes,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(saved
+              ? 'Student records downloaded.'
+              : 'Downloads are available in the web app.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is ApiException ? e.message : 'Could not download the records.'),
+          backgroundColor: AppColors.statRedIcon,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+
+  Future<void> _refresh() => _load();
+
 
   List<String> get _companyOptions {
     final names = _students
@@ -85,21 +175,9 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
     return names;
   }
 
-  List<TeacherStudentSummary> get _filtered {
-    var list = _students.where((s) {
-      final matchesQuery =
-          _query.isEmpty || s.name.toLowerCase().contains(_query.toLowerCase());
-      final matchesCompany = _companyFilter == null
-          ? true
-          : _companyFilter == 'none'
-              ? s.companyName == null
-              : s.companyName == _companyFilter;
-      final matchesStage = _stageFilter == null || s.stage == _stageFilter;
-      final matchesProgress =
-          _progressFilter == null || s.progressStatus == _progressFilter;
-      return matchesQuery && matchesCompany && matchesStage && matchesProgress;
-    }).toList();
-
+  /// Students in the order picked in the filter sheet.
+  List<TeacherStudentSummary> get _sorted {
+    final list = [..._students];
     list.sort((a, b) {
       final result = _sortBy == 'progress'
           ? a.progressRatio.compareTo(b.progressRatio)
@@ -108,9 +186,6 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
     });
     return list;
   }
-
-  int _countByStage(OjtStage stage) =>
-      _students.where((s) => s.stage == stage).length;
 
   void _openFilterSheet() {
     showModalBottomSheet(
@@ -239,159 +314,25 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const AppHeader(title: 'Students', subtitle: 'Personal Dashboard'),
-          Expanded(
-            child: _loading
-                ? const SkeletonList()
-                : RefreshIndicator(
-                    color: AppColors.primaryMaroon,
-                    onRefresh: _refresh,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Transform.translate(
-                              offset: const Offset(0, -20),
-                              child: _classes.isEmpty
-                                  ? CreateClassCard(onCreate: _createClass)
-                                  : ClassInfoCard(instructorClass: _classes.first),
-                            ),
-                            if (_classes.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      onChanged: (v) => setState(() => _query = v),
-                                      decoration: InputDecoration(
-                                        hintText: 'Search Student...',
-                                        prefixIcon: const Icon(Icons.search),
-                                        filled: true,
-                                        fillColor: AppColors.cardWhite,
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(14),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Material(
-                                    color: AppColors.cardWhite,
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: IconButton(
-                                      onPressed: _openFilterSheet,
-                                      tooltip: 'Filter & sort students',
-                                      icon: const Icon(
-                                        Icons.tune,
-                                        color: AppColors.primaryMaroon,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TeacherSummaryTile(
-                                      icon: Icons.groups_outlined,
-                                      iconColor: AppColors.primaryMaroon,
-                                      backgroundColor: AppColors.statRedBg,
-                                      label: 'Assigned Students',
-                                      value: '${_students.length}',
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TeacherSummaryTile(
-                                      icon: Icons.directions_run,
-                                      iconColor: AppColors.statRedIcon,
-                                      backgroundColor: AppColors.statRedBg,
-                                      label: 'Active Students',
-                                      value: '${_countByStage(OjtStage.active)}',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TeacherSummaryTile(
-                                      icon: Icons.flight_takeoff,
-                                      iconColor: AppColors.statOrangeIcon,
-                                      backgroundColor: AppColors.statOrangeBg,
-                                      label: 'Preparing',
-                                      value:
-                                          '${_countByStage(OjtStage.readyForDeployment)}',
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: TeacherSummaryTile(
-                                      icon: Icons.check_circle_outline,
-                                      iconColor: AppColors.successGreenText,
-                                      backgroundColor: AppColors.successGreenBg,
-                                      label: 'Completed Students',
-                                      value: '${_countByStage(OjtStage.completed)}',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Student List',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              if (_filtered.isEmpty)
-                                EmptyStateView(
-                                  icon: Icons.groups_outlined,
-                                  title: _students.isEmpty
-                                      ? 'No students yet'
-                                      : 'No matching students',
-                                  message: _students.isEmpty
-                                      ? 'Share your class activation code so '
-                                          'students can join.'
-                                      : 'Try a different search or filter.',
-                                )
-                              else
-                                for (final student in _filtered) ...[
-                                  TeacherStudentListTile(
-                                    student: student,
-                                    onTap: () => widget.onOpenStudent(student.id),
-                                  ),
-                                  const SizedBox(height: 10),
-                                ],
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
-        ],
-      ),
+    if (_loading) {
+      return const ColoredBox(
+        color: DeskColors.page,
+        child: Center(child: CircularProgressIndicator(color: DeskColors.maroon)),
+      );
+    }
+    return TeacherStudentsDesk(
+      classes: _classes,
+      students: _sorted,
+      requests: _requests,
+      exporting: _exporting,
+      onOpenStudent: widget.onOpenStudent,
+      onDecide: _decide,
+      onGenerate: _downloadRecords,
+      onOpenFilter: _openFilterSheet,
+      filtersActive: _filtersActive,
+      matchesFilters: _matchesFilters,
+      onRefresh: _refresh,
+      compact: !isDeskLayout(context),
     );
   }
 }

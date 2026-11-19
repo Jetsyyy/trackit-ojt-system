@@ -83,158 +83,6 @@ class _AdminFacultyScreenState extends State<AdminFacultyScreen> {
         .toList();
   }
 
-  Future<void> _openAddInstructorDialog() async {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final phoneController = TextEditingController();
-    final departmentController = TextEditingController(
-      text: 'Department of Computing Sciences and Engineering',
-    );
-    final positionController = TextEditingController(text: 'Instructor');
-    DateTime? dateHired;
-    bool submitting = false;
-    String? error;
-
-    final created = await showDialog<AdminInstructorSummary>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          Future<void> pickDateHired() async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: dateHired ?? DateTime.now(),
-              firstDate: DateTime(2000),
-              lastDate: DateTime.now(),
-            );
-            if (picked != null) setDialogState(() => dateHired = picked);
-          }
-
-          Future<void> submit() async {
-            if (!formKey.currentState!.validate()) return;
-            setDialogState(() {
-              submitting = true;
-              error = null;
-            });
-            try {
-              final instructor = await _service.createInstructor(
-                name: nameController.text.trim(),
-                email: emailController.text.trim(),
-                phone: phoneController.text.trim(),
-                department: departmentController.text.trim(),
-                position: positionController.text.trim(),
-                dateHired: dateHired,
-              );
-              if (!dialogContext.mounted) return;
-              Navigator.of(dialogContext).pop(instructor);
-            } on ApiException catch (e) {
-              setDialogState(() {
-                error = e.message;
-                submitting = false;
-              });
-            }
-          }
-
-          return AlertDialog(
-            title: const Text('Add Instructor'),
-            content: SizedBox(
-              width: 380,
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (error != null) ...[
-                        Text(error!, style: const TextStyle(color: AppColors.statRedIcon, fontSize: 13)),
-                        const SizedBox(height: 10),
-                      ],
-                      TextFormField(
-                        controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Full Name'),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: 'Email'),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          if (!v.contains('@')) return 'Enter a valid email';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(labelText: 'Phone Number'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: departmentController,
-                        decoration: const InputDecoration(labelText: 'Department'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: positionController,
-                        decoration: const InputDecoration(labelText: 'Position'),
-                      ),
-                      const SizedBox(height: 12),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.event_outlined, color: AppColors.primaryMaroon),
-                        title: Text(
-                          dateHired == null
-                              ? 'No hire date set'
-                              : 'Date Hired: ${dateHired!.month}/${dateHired!.day}/${dateHired!.year}',
-                        ),
-                        trailing: TextButton(
-                          onPressed: pickDateHired,
-                          child: Text(dateHired == null ? 'Set' : 'Change'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: submitting ? null : () => Navigator.of(dialogContext).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: submitting ? null : submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryMaroon,
-                  foregroundColor: Colors.white,
-                ),
-                child: submitting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Create'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (created == null || !mounted) return;
-    setState(() => _selectedInstructorId = created.id);
-    await _load();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Instructor "${created.name}" created.')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -322,17 +170,6 @@ class _AdminFacultyScreenState extends State<AdminFacultyScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              ElevatedButton.icon(
-                onPressed: _openAddInstructorDialog,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryMaroon,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -342,7 +179,7 @@ class _AdminFacultyScreenState extends State<AdminFacultyScreen> {
                     icon: Icons.badge_outlined,
                     title: _instructors.isEmpty ? 'No instructors yet' : 'No matching instructors',
                     message: _instructors.isEmpty
-                        ? 'Tap "Add" to create the first Faculty account.'
+                        ? 'Approved instructors appear here. Generate a registration code in the Registration Codes tab.'
                         : 'Try a different search.',
                   )
                 : ListView.separated(

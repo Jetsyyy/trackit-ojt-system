@@ -3,7 +3,7 @@ enum NotificationCategory { admin, instructor, system }
 /// Where tapping a notification should take the student. Maps to a
 /// StudentShell bottom-nav tab; deeper in-module deep linking (e.g.
 /// jumping straight to one document row) is a future enhancement.
-enum NotificationTarget { home, attendance, documents, profile }
+enum NotificationTarget { home, weekly, documents, profile }
 
 class AppNotification {
   final String id;
@@ -26,8 +26,11 @@ class AppNotification {
 
   static NotificationTarget _targetFromModule(String? module) {
     switch (module) {
+      // Weekly DTR/AR notices; 'attendance' is kept so older notifications
+      // from the retired clock in/out feature still open somewhere sensible.
+      case 'activity_reports':
       case 'attendance':
-        return NotificationTarget.attendance;
+        return NotificationTarget.weekly;
       case 'documents':
         return NotificationTarget.documents;
       case 'profile':

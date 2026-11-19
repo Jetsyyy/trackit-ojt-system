@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../../models/company_details.dart';
 import '../../../models/ojt_requirement_phase.dart';
+import '../../../models/student_profile.dart';
 import '../../../services/ojt_requirements_service.dart';
 import '../../../services/student_profile_service.dart';
 import '../../../utils/app_colors.dart';
 import '../../../widgets/common/back_nav_header.dart';
-import '../../../widgets/common/info_reminder_card.dart';
 import '../../../widgets/common/skeleton_list_tile.dart';
 import '../../../widgets/student/documents/phase_card.dart';
+import '../../../widgets/student/student_ui.dart';
+import 'account_finalization_screen.dart';
 import 'confirm_company_details_screen.dart';
 import 'phase_requirements_screen.dart';
 
+/// OJT Requirements (TrackIT student mockup): overall progress, the
+/// reminder, the four phases, and the Account Details Finalization card.
 class StartupRequirementsScreen extends StatefulWidget {
   final OjtRequirementsService service;
   final StudentProfileService profileService;
@@ -22,15 +26,15 @@ class StartupRequirementsScreen extends StatefulWidget {
   });
 
   @override
-  State<StartupRequirementsScreen> createState() =>
-      _StartupRequirementsScreenState();
+  State<StartupRequirementsScreen> createState() => _StartupRequirementsScreenState();
 }
 
-class _StartupRequirementsScreenState
-    extends State<StartupRequirementsScreen> {
+class _StartupRequirementsScreenState extends State<StartupRequirementsScreen> {
   List<OjtRequirementPhase> _phases = [];
-  CompanyDetails? _companyDetails;
+  StudentProfile? _profile;
   bool _loading = true;
+
+  CompanyDetails? get _companyDetails => _profile?.company;
 
   @override
   void initState() {
@@ -44,128 +48,143 @@ class _StartupRequirementsScreenState
     if (!mounted) return;
     setState(() {
       _phases = phases;
-      _companyDetails = profile.company;
+      _profile = profile;
       _loading = false;
     });
   }
 
   Future<void> _openPhase(OjtRequirementPhase phase) async {
+    if (phase.status == PhaseStatus.locked) {
+      await _showLockedDialog();
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => PhaseRequirementsScreen(
-          phaseId: phase.id,
-          service: widget.service,
+        builder: (context) => StudentBackdrop(
+          child: PhaseRequirementsScreen(
+            phaseId: phase.id,
+            service: widget.service,
+            isFinalPhase: phase.order == _phases.map((p) => p.order).fold<int>(0, (a, b) => a > b ? a : b),
+          ),
         ),
       ),
     );
     _load();
   }
 
-  Future<void> _openConfirmCompanyDetails() async {
-    final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (context) => ConfirmCompanyDetailsScreen(
-          service: widget.profileService,
-          existingDetails: _companyDetails,
+  Future<void> _showLockedDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock, size: 46, color: Color(0xFF1F1F1F)),
+              const SizedBox(height: 10),
+              const Text('Not Yet Available!', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              const Text(
+                'Complete and obtain approval for the required documents in the previous phase to proceed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Color(0xFF333333)),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(foregroundColor: StudentColors.maroon),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _openFinalization() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final String? result;
+    if (_companyDetails == null) {
+      result = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => AccountFinalizationScreen(
+            service: widget.profileService,
+            profile: profile,
+          ),
+        ),
+      );
+    } else {
+      // Already submitted: view it and update the supervisor.
+      result = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => StudentBackdrop(
+            child: ConfirmCompanyDetailsScreen(
+              service: widget.profileService,
+              existingDetails: _companyDetails,
+            ),
+          ),
+        ),
+      );
+    }
     if (!mounted) return;
     await _load();
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result),
-          backgroundColor: AppColors.successGreenText,
-        ),
+        SnackBar(content: Text(result), backgroundColor: AppColors.successGreenText),
       );
     }
   }
 
   double get _progress {
     if (_phases.isEmpty) return 0;
-    final completed = _phases
-        .where((p) => p.status == PhaseStatus.completed)
-        .length;
-    return completed / _phases.length;
+    return _phases.where((p) => p.status == PhaseStatus.completed).length / _phases.length;
   }
 
-  bool get _allCompleted =>
-      _phases.isNotEmpty &&
-      _phases.every((p) => p.status == PhaseStatus.completed);
-
-  Future<void> _refresh() => _load();
+  bool get _allCompleted => _phases.isNotEmpty && _phases.every((p) => p.status == PhaseStatus.completed);
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      bottom: false,
-      child: Column(
-        children: [
-          const BackNavHeader(subtitle: 'Startup Requirements'),
-          Expanded(
-            child: _loading
-                ? const SkeletonList()
-                : RefreshIndicator(
-                    color: AppColors.primaryMaroon,
-                    onRefresh: _refresh,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _OverallProgressCard(progress: _progress),
-                            const SizedBox(height: 16),
-                            const InfoReminderCard(
-                              message:
-                                  'Complete each phase in order. Some phases '
-                                  'will unlock automatically once '
-                                  'requirements are met.',
-                            ),
-                            const SizedBox(height: 20),
-                            const Text(
-                              'Requirements',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            for (final phase in _phases) ...[
-                              PhaseCard(
-                                phase: phase,
-                                onTap: () => _openPhase(phase),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Details Confirmation',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            _allCompleted
-                                ? _FinalizationCard(
-                                    companyDetails: _companyDetails,
-                                    onTap: _openConfirmCompanyDetails,
-                                  )
-                                : const _PendingConfirmationCard(),
-                          ],
-                        ),
+    return Column(
+      children: [
+        const BackNavHeader(subtitle: 'OJT Requirements'),
+        Expanded(
+          child: _loading
+              ? const SkeletonList()
+              : RefreshIndicator(
+                  color: AppColors.primaryMaroon,
+                  onRefresh: _load,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+                    children: [
+                      _OverallProgressCard(progress: _progress),
+                      const SizedBox(height: 10),
+                      const _ReminderCard(),
+                      const SizedBox(height: 20),
+                      const Text('Requirements', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 12),
+                      for (final phase in _phases) ...[
+                        PhaseCard(phase: phase, onTap: () => _openPhase(phase)),
+                        const SizedBox(height: 14),
+                      ],
+                      const SizedBox(height: 6),
+                      const Text('Details Confirmation', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 12),
+                      _FinalizationCard(
+                        unlocked: _allCompleted,
+                        submittedCompany: _companyDetails?.name,
+                        onTap: _allCompleted ? _openFinalization : null,
                       ),
-                    ),
+                    ],
                   ),
-          ),
-        ],
-      ),
+                ),
+        ),
+      ],
     );
   }
 }
@@ -177,55 +196,33 @@ class _OverallProgressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return StudentCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Overall Progress',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('Overall Progress', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
                 ),
               ),
-              Text(
-                '${(progress * 100).round()}%',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryMaroon,
-                ),
-              ),
+              Text('${(progress * 100).round()}%', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
             child: TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: progress),
               duration: const Duration(milliseconds: 500),
               builder: (context, value, _) => LinearProgressIndicator(
                 value: value,
-                minHeight: 10,
-                backgroundColor: AppColors.background,
-                valueColor: const AlwaysStoppedAnimation(
-                  AppColors.primaryMaroon,
-                ),
+                minHeight: 12,
+                backgroundColor: const Color(0xFFC4C4C4),
+                valueColor: const AlwaysStoppedAnimation(StudentColors.maroon),
               ),
             ),
           ),
@@ -235,86 +232,103 @@ class _OverallProgressCard extends StatelessWidget {
   }
 }
 
-class _PendingConfirmationCard extends StatelessWidget {
-  const _PendingConfirmationCard();
+class _ReminderCard extends StatelessWidget {
+  const _ReminderCard();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AppColors.primaryMaroon,
-        borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFCFCFCF)),
       ),
-      child: const Text(
-        'Complete all pre requisite requirements and start your OJT Journey!',
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        textAlign: TextAlign.center,
+      child: const Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: StudentColors.maroon,
+            child: Icon(Icons.priority_high, color: Colors.white, size: 20),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Reminder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                SizedBox(height: 2),
+                Text(
+                  'Complete each phase in order. Some phases will unlock automatically once requirements are met.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF333333)),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _FinalizationCard extends StatelessWidget {
-  final CompanyDetails? companyDetails;
-  final VoidCallback onTap;
+  final bool unlocked;
+  final String? submittedCompany;
+  final VoidCallback? onTap;
 
-  const _FinalizationCard({required this.companyDetails, required this.onTap});
+  const _FinalizationCard({required this.unlocked, required this.submittedCompany, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final isConfirmed = companyDetails != null;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.successGreenBg,
-        borderRadius: BorderRadius.circular(18),
-      ),
+    final color = unlocked ? StudentColors.approved : StudentColors.maroon;
+    final message = !unlocked
+        ? 'Complete all pre requisite requirements and start your OJT Journey!'
+        : submittedCompany == null
+            ? 'Requirements Completed. Start Finalizing your Account Information'
+            : 'Submitted for $submittedCompany. Tap to view your details or update your supervisor.';
+    return StudentCard(
+      color: color,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(
-            isConfirmed ? Icons.verified : Icons.check_circle,
-            color: AppColors.successGreenText,
-            size: 32,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Confirm Company Details',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.successGreenText,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isConfirmed
-                ? 'Company details confirmed for ${companyDetails!.name}. '
-                    'You can update them anytime.'
-                : 'Requirements completed. Confirm your OJT company details '
-                    'to finish setting up your account.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.successGreenText,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onTap,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.successGreenText,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+          Row(
+            children: [
+              Icon(
+                submittedCompany != null ? Icons.verified : Icons.check_circle,
+                color: unlocked ? Colors.white : Colors.white,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Account Details Finalization',
+                  style: studentSerif(size: 22, color: Colors.white, weight: FontWeight.w600),
                 ),
               ),
-              child: Text(isConfirmed ? 'Edit Details' : 'Continue'),
-            ),
+            ],
           ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: unlocked ? 0.75 : 1)),
+          ),
+          if (unlocked) ...[
+            const SizedBox(height: 12),
+            Container(
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                submittedCompany == null ? 'Start Finalization' : 'View Details',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: StudentColors.approved),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1,66 +1,61 @@
-/// A single weekly-report slot, from the reviewing instructor's side.
-/// Weekly AR Submissions is a read-only compilation -- no status change
-/// happens here, unlike Official Requirements.
-class TeacherWeeklyReportRow {
-  final int weekNumber;
-  final DateTime weekStartDate;
-  final DateTime weekEndDate;
-  final String status;
-  final String? description;
-  final DateTime? submittedAt;
+import 'weekly_submission.dart';
 
-  const TeacherWeeklyReportRow({
-    required this.weekNumber,
-    required this.weekStartDate,
-    required this.weekEndDate,
-    required this.status,
-    this.description,
-    this.submittedAt,
-  });
-
-  factory TeacherWeeklyReportRow.fromJson(Map<String, dynamic> json) {
-    return TeacherWeeklyReportRow(
-      weekNumber: json['weekNumber'] as int,
-      weekStartDate: DateTime.parse(json['weekStartDate'] as String),
-      weekEndDate: DateTime.parse(json['weekEndDate'] as String),
-      status: json['status'] as String,
-      description: json['description'] as String?,
-      submittedAt: json['submittedAt'] != null
-          ? DateTime.parse(json['submittedAt'] as String)
-          : null,
-    );
-  }
-}
-
-/// One row in the Weekly AR Submissions student list.
-class TeacherWeeklyReportStudentSummary {
+/// One assigned student in the instructor's Weekly DTR & AR review list.
+/// Uses the same [WeeklySummary] the student sees, so both sides always
+/// agree on credited, pending and remaining hours.
+class TeacherWeeklyStudent {
   final int id;
   final String name;
   final String? avatarUrl;
   final String course;
   final String section;
-  final int expectedWeeks;
-  final int submittedWeeks;
+  final String? studentNumber;
+  final int? classId;
+  final WeeklySummary summary;
 
-  const TeacherWeeklyReportStudentSummary({
+  const TeacherWeeklyStudent({
     required this.id,
     required this.name,
     this.avatarUrl,
     required this.course,
     required this.section,
-    required this.expectedWeeks,
-    required this.submittedWeeks,
+    this.studentNumber,
+    this.classId,
+    required this.summary,
   });
 
-  factory TeacherWeeklyReportStudentSummary.fromJson(Map<String, dynamic> json) {
-    return TeacherWeeklyReportStudentSummary(
+  factory TeacherWeeklyStudent.fromJson(Map<String, dynamic> json) {
+    return TeacherWeeklyStudent(
       id: json['id'] as int,
       name: json['name'] as String,
       avatarUrl: json['avatarUrl'] as String?,
-      course: json['course'] as String,
-      section: json['section'] as String,
-      expectedWeeks: json['expectedWeeks'] as int,
-      submittedWeeks: json['submittedWeeks'] as int,
+      course: json['course'] as String? ?? '',
+      section: json['section'] as String? ?? '',
+      studentNumber: json['studentNumber'] as String?,
+      classId: json['classId'] as int?,
+      // The list endpoint spreads the summary fields onto the student row.
+      summary: WeeklySummary.fromJson(json),
+    );
+  }
+}
+
+/// One student's weeks, as returned by the detail and review endpoints.
+class TeacherStudentWeeks {
+  final TeacherWeeklyStudent student;
+  final List<WeeklySubmission> weeks;
+
+  const TeacherStudentWeeks({required this.student, required this.weeks});
+
+  factory TeacherStudentWeeks.fromJson(Map<String, dynamic> json) {
+    final student = json['student'] as Map<String, dynamic>;
+    return TeacherStudentWeeks(
+      student: TeacherWeeklyStudent.fromJson({
+        ...student,
+        ...(json['summary'] as Map<String, dynamic>),
+      }),
+      weeks: (json['reports'] as List<dynamic>)
+          .map((w) => WeeklySubmission.fromJson(w as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

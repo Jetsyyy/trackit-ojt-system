@@ -14,16 +14,21 @@ AdminOverviewCompletionBucket _completionBucketFromDb(String value) {
   }
 }
 
-enum AdminOverviewAttendanceStatus { clockedIn, lateMissed, notYetClockedIn }
+/// Where a student stands on weekly DTR & AR submissions.
+enum AdminOverviewWeeklyStatus { awaitingReview, returned, noRecent, upToDate, notStarted }
 
-AdminOverviewAttendanceStatus _attendanceStatusFromDb(String value) {
+AdminOverviewWeeklyStatus _weeklyStatusFromDb(String value) {
   switch (value) {
-    case 'clockedIn':
-      return AdminOverviewAttendanceStatus.clockedIn;
-    case 'lateMissed':
-      return AdminOverviewAttendanceStatus.lateMissed;
+    case 'awaitingReview':
+      return AdminOverviewWeeklyStatus.awaitingReview;
+    case 'returned':
+      return AdminOverviewWeeklyStatus.returned;
+    case 'noRecent':
+      return AdminOverviewWeeklyStatus.noRecent;
+    case 'notStarted':
+      return AdminOverviewWeeklyStatus.notStarted;
     default:
-      return AdminOverviewAttendanceStatus.notYetClockedIn;
+      return AdminOverviewWeeklyStatus.upToDate;
   }
 }
 
@@ -65,34 +70,44 @@ class AdminOverviewStudent {
   }
 }
 
-class AdminOverviewAttendanceEntry {
+class AdminOverviewWeeklyEntry {
   final int id;
   final String name;
   final String? program;
   final String? section;
-  final AdminOverviewAttendanceStatus status;
-  final DateTime? clockIn;
-  final DateTime? clockOut;
+  final String? instructorName;
+  final AdminOverviewWeeklyStatus status;
+  final int approvedWeeks;
+  final int awaitingReviewWeeks;
+  final int returnedWeeks;
+  final DateTime? lastWeekEnd;
 
-  const AdminOverviewAttendanceEntry({
+  const AdminOverviewWeeklyEntry({
     required this.id,
     required this.name,
     this.program,
     this.section,
+    this.instructorName,
     required this.status,
-    this.clockIn,
-    this.clockOut,
+    required this.approvedWeeks,
+    required this.awaitingReviewWeeks,
+    required this.returnedWeeks,
+    this.lastWeekEnd,
   });
 
-  factory AdminOverviewAttendanceEntry.fromJson(Map<String, dynamic> json) {
-    return AdminOverviewAttendanceEntry(
+  factory AdminOverviewWeeklyEntry.fromJson(Map<String, dynamic> json) {
+    return AdminOverviewWeeklyEntry(
       id: json['id'] as int,
       name: json['name'] as String,
       program: json['program'] as String?,
       section: json['section'] as String?,
-      status: _attendanceStatusFromDb(json['status'] as String),
-      clockIn: json['clockIn'] != null ? DateTime.parse(json['clockIn'] as String) : null,
-      clockOut: json['clockOut'] != null ? DateTime.parse(json['clockOut'] as String) : null,
+      instructorName: json['instructorName'] as String?,
+      status: _weeklyStatusFromDb(json['status'] as String),
+      approvedWeeks: json['approvedWeeks'] as int,
+      awaitingReviewWeeks: json['awaitingReviewWeeks'] as int,
+      returnedWeeks: json['returnedWeeks'] as int,
+      lastWeekEnd:
+          json['lastWeekEnd'] != null ? DateTime.parse(json['lastWeekEnd'] as String) : null,
     );
   }
 }
@@ -173,32 +188,6 @@ class AdminOverviewCompanyPending {
   }
 }
 
-class AdminOverviewCorrectionPending {
-  final int id;
-  final String studentName;
-  final DateTime workDate;
-  final String reason;
-  final DateTime createdAt;
-
-  const AdminOverviewCorrectionPending({
-    required this.id,
-    required this.studentName,
-    required this.workDate,
-    required this.reason,
-    required this.createdAt,
-  });
-
-  factory AdminOverviewCorrectionPending.fromJson(Map<String, dynamic> json) {
-    return AdminOverviewCorrectionPending(
-      id: json['id'] as int,
-      studentName: json['studentName'] as String,
-      workDate: DateTime.parse(json['workDate'] as String),
-      reason: json['reason'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-    );
-  }
-}
-
 class AdminOverviewRiskStudent {
   final int id;
   final String name;
@@ -219,10 +208,10 @@ class AdminOverview {
   final int ongoingCount;
   final int notStartedCount;
 
-  final int clockedInToday;
-  final int lateMissedToday;
-  final int notYetClockedInToday;
-  final int lateClockInHourPht;
+  final int weeksApproved;
+  final int weeksAwaitingReview;
+  final int weeksReturned;
+  final int studentsAwaitingReview;
 
   final double totalHoursRendered;
   final double totalHoursRequired;
@@ -231,14 +220,13 @@ class AdminOverview {
   final List<AdminOverviewAccountPreparing> accountsPreparing;
   final List<AdminOverviewDocumentPending> documentsAwaitingReview;
   final List<AdminOverviewCompanyPending> companyVerification;
-  final List<AdminOverviewCorrectionPending> correctionRequests;
 
   final List<AdminOverviewRiskStudent> belowHalfHours;
-  final List<AdminOverviewRiskStudent> noAttendanceThisWeek;
+  final List<AdminOverviewRiskStudent> noRecentSubmission;
   final List<AdminOverviewRiskStudent> behindSchedule;
 
   final List<AdminOverviewStudent> studentList;
-  final List<AdminOverviewAttendanceEntry> attendanceList;
+  final List<AdminOverviewWeeklyEntry> weeklyList;
 
   const AdminOverview({
     required this.academicYear,
@@ -247,29 +235,27 @@ class AdminOverview {
     required this.completedCount,
     required this.ongoingCount,
     required this.notStartedCount,
-    required this.clockedInToday,
-    required this.lateMissedToday,
-    required this.notYetClockedInToday,
-    required this.lateClockInHourPht,
+    required this.weeksApproved,
+    required this.weeksAwaitingReview,
+    required this.weeksReturned,
+    required this.studentsAwaitingReview,
     required this.totalHoursRendered,
     required this.totalHoursRequired,
     required this.overallCompletionPercent,
     required this.accountsPreparing,
     required this.documentsAwaitingReview,
     required this.companyVerification,
-    required this.correctionRequests,
     required this.belowHalfHours,
-    required this.noAttendanceThisWeek,
+    required this.noRecentSubmission,
     required this.behindSchedule,
     required this.studentList,
-    required this.attendanceList,
+    required this.weeklyList,
   });
 
   int get pendingTasksTotal =>
       accountsPreparing.length +
       documentsAwaitingReview.length +
-      companyVerification.length +
-      correctionRequests.length;
+      companyVerification.length;
 
   /// The union of every at-risk student, each tagged with which
   /// condition(s) it met -- a student can appear under more than one
@@ -288,7 +274,7 @@ class AdminOverview {
     }
 
     addAll(belowHalfHours, 'Below 50% of required hours');
-    addAll(noAttendanceThisWeek, 'No attendance this week');
+    addAll(noRecentSubmission, 'No DTR & AR in the last 2 weeks');
     addAll(behindSchedule, 'Behind schedule');
     final list = byId.values.toList();
     list.sort((a, b) => a.name.compareTo(b.name));
@@ -297,7 +283,7 @@ class AdminOverview {
 
   factory AdminOverview.fromJson(Map<String, dynamic> json) {
     final completion = json['completion'] as Map<String, dynamic>;
-    final attendanceToday = json['attendanceToday'] as Map<String, dynamic>;
+    final weekly = json['weeklyReports'] as Map<String, dynamic>;
     final hours = json['hours'] as Map<String, dynamic>;
     final pendingTasks = json['pendingTasks'] as Map<String, dynamic>;
     final atRisk = json['atRisk'] as Map<String, dynamic>;
@@ -312,10 +298,10 @@ class AdminOverview {
       completedCount: completion['completed'] as int,
       ongoingCount: completion['ongoing'] as int,
       notStartedCount: completion['notStarted'] as int,
-      clockedInToday: attendanceToday['clockedIn'] as int,
-      lateMissedToday: attendanceToday['lateMissed'] as int,
-      notYetClockedInToday: attendanceToday['notYetClockedIn'] as int,
-      lateClockInHourPht: attendanceToday['lateClockInHourPht'] as int,
+      weeksApproved: weekly['approved'] as int,
+      weeksAwaitingReview: weekly['awaitingReview'] as int,
+      weeksReturned: weekly['returned'] as int,
+      studentsAwaitingReview: weekly['studentsAwaitingReview'] as int,
       totalHoursRendered: (hours['totalRendered'] as num).toDouble(),
       totalHoursRequired: (hours['totalRequired'] as num).toDouble(),
       overallCompletionPercent: (hours['overallCompletionPercent'] as num).toDouble(),
@@ -331,16 +317,12 @@ class AdminOverview {
         pendingTasks['companyVerification'] as List<dynamic>,
         AdminOverviewCompanyPending.fromJson,
       ),
-      correctionRequests: parseList(
-        pendingTasks['correctionRequests'] as List<dynamic>,
-        AdminOverviewCorrectionPending.fromJson,
-      ),
       belowHalfHours: parseList(
         atRisk['belowHalfHours'] as List<dynamic>,
         AdminOverviewRiskStudent.fromJson,
       ),
-      noAttendanceThisWeek: parseList(
-        atRisk['noAttendanceThisWeek'] as List<dynamic>,
+      noRecentSubmission: parseList(
+        atRisk['noRecentSubmission'] as List<dynamic>,
         AdminOverviewRiskStudent.fromJson,
       ),
       behindSchedule: parseList(
@@ -348,9 +330,9 @@ class AdminOverview {
         AdminOverviewRiskStudent.fromJson,
       ),
       studentList: parseList(json['studentList'] as List<dynamic>, AdminOverviewStudent.fromJson),
-      attendanceList: parseList(
-        json['attendanceList'] as List<dynamic>,
-        AdminOverviewAttendanceEntry.fromJson,
+      weeklyList: parseList(
+        json['weeklyList'] as List<dynamic>,
+        AdminOverviewWeeklyEntry.fromJson,
       ),
     );
   }

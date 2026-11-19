@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/notification.dart';
 import '../../services/notifications_service.dart';
 import '../../utils/app_colors.dart';
-import '../../widgets/common/app_header.dart';
+import '../../widgets/common/back_nav_header.dart';
 import '../../widgets/common/empty_state_view.dart';
 import '../../widgets/common/filter_chip_pill.dart';
 import '../../widgets/common/skeleton_list_tile.dart';
@@ -103,10 +103,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const AppHeader(
-            title: 'Notifications',
-            subtitle: 'Stay updated on your OJT progress',
-          ),
+          // Opened from the bell in the header, so it has a back arrow.
+          const BackNavHeader(subtitle: 'Notifications'),
           Expanded(
             child: _loading
                 ? const SkeletonList()

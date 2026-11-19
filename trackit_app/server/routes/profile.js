@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { linkStudentToHte } = require('../utils/hteDirectory');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -260,6 +261,22 @@ router.post('/company', async (req, res) => {
         .json({ success: false, message: 'All company detail fields are required.' });
     }
 
+    // System Revisions item 4: company information is a one-time entry.
+    // After it's submitted only the supervisor can change (PATCH
+    // /company/supervisor below). Item 21: it's reflected as entered --
+    // there is no Admin approval step.
+    const existing = await pool.query(
+      'SELECT company_confirmed_at FROM student_profiles WHERE student_id = $1',
+      [req.studentId],
+    );
+    if (existing.rows[0]?.company_confirmed_at) {
+      return res.status(409).json({
+        success: false,
+        message:
+          'Your company information was already submitted and can no longer be changed. You can still update your supervisor.',
+      });
+    }
+
     await pool.query(
       `INSERT INTO student_profiles
          (student_id, company_name, company_address, company_industry,
@@ -284,10 +301,50 @@ router.post('/company', async (req, res) => {
       ],
     );
 
+    // System Revisions item 17: the student appears under their company in
+    // the HTE Directory (added there automatically if not yet listed).
+    try {
+      await linkStudentToHte(req.studentId, { name, address, industry });
+    } catch (linkError) {
+      console.error('Link student to HTE error:', linkError);
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error('Submit company details error:', error);
     res.status(500).json({ success: false, message: 'Failed to save company details.' });
+  }
+});
+
+// System Revisions item 5: the supervisor may change after deployment, so
+// the supervisor's name and contact number stay editable.
+router.patch('/company/supervisor', async (req, res) => {
+  try {
+    const supervisorName = (req.body.supervisorName || '').toString().trim();
+    const contactNumber = (req.body.contactNumber || '').toString().trim();
+    if (!supervisorName || !contactNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Supervisor name and contact number are required.',
+      });
+    }
+    const updated = await pool.query(
+      `UPDATE student_profiles
+       SET company_supervisor_name = $1, company_contact_number = $2, updated_at = now()
+       WHERE student_id = $3 AND company_confirmed_at IS NOT NULL
+       RETURNING student_id`,
+      [supervisorName, contactNumber, req.studentId],
+    );
+    if (updated.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Submit your company information first.',
+      });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update supervisor error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update supervisor.' });
   }
 });
 

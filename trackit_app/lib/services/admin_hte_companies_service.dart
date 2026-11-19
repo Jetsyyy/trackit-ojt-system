@@ -29,6 +29,16 @@ abstract class AdminHteCompaniesService {
   });
 
   Future<void> deleteCompany(int id);
+
+  /// HTE Directory report (System Revisions items 18, 22) as 'xlsx' or
+  /// 'pdf'. [location] is a city or a region such as "Metro Manila".
+  /// [type] 'info' leaves students out; [sections] like 'BSIT - 4A'.
+  Future<RawFileResponse> downloadReport({
+    required String format,
+    String? location,
+    String type = 'students',
+    List<String> sections = const [],
+  });
 }
 
 class HttpAdminHteCompaniesService implements AdminHteCompaniesService {
@@ -123,5 +133,24 @@ class HttpAdminHteCompaniesService implements AdminHteCompaniesService {
   @override
   Future<void> deleteCompany(int id) async {
     await client.delete('/api/admin/hte-companies/$id');
+  }
+
+  @override
+  Future<RawFileResponse> downloadReport({
+    required String format,
+    String? location,
+    String type = 'students',
+    List<String> sections = const [],
+  }) {
+    final uri = Uri(
+      path: '/api/admin/hte-companies/report',
+      queryParameters: {
+        'format': format,
+        'type': type,
+        if (location != null && location.isNotEmpty) 'location': location,
+        if (sections.isNotEmpty) 'sections': sections.join(','),
+      },
+    );
+    return client.getBytes(uri.toString());
   }
 }

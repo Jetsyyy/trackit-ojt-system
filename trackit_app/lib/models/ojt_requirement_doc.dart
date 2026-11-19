@@ -9,6 +9,11 @@ class OjtRequirementDoc {
   final bool hasTemplate;
   final String? templateUrl;
   final String? templateName;
+
+  /// The office the student gets this document from (e.g. 'Clinic',
+  /// 'Registrar'). Such requirements have no downloadable template
+  /// (System Revisions item 6).
+  final String? issuedBy;
   final String? uploadedFileName;
   final String? uploadedFileUrl;
   final DateTime? submittedAt;
@@ -25,6 +30,7 @@ class OjtRequirementDoc {
     this.hasTemplate = false,
     this.templateUrl,
     this.templateName,
+    this.issuedBy,
     this.uploadedFileName,
     this.uploadedFileUrl,
     this.submittedAt,
@@ -46,6 +52,7 @@ class OjtRequirementDoc {
       hasTemplate: json['hasTemplate'] as bool? ?? false,
       templateUrl: json['templateUrl'] as String?,
       templateName: json['templateName'] as String?,
+      issuedBy: json['issuedBy'] as String?,
       uploadedFileName: json['uploadedFileName'] as String?,
       uploadedFileUrl: json['uploadedFileUrl'] as String?,
       submittedAt: json['submittedAt'] != null
@@ -70,6 +77,7 @@ class OjtRequirementDoc {
       hasTemplate: hasTemplate,
       templateUrl: templateUrl,
       templateName: templateName,
+      issuedBy: issuedBy,
       uploadedFileName: uploadedFileName ?? this.uploadedFileName,
       uploadedFileUrl: uploadedFileUrl ?? this.uploadedFileUrl,
       submittedAt: submittedAt ?? this.submittedAt,

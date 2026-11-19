@@ -1,90 +1,104 @@
 import 'package:flutter/material.dart';
 import '../../../models/hte_company.dart';
-import '../../../utils/app_colors.dart';
+import '../../common/desk_ui.dart';
+import '../student_ui.dart';
 
+/// HTE Directory company card (TrackIT student mockup): industry icon box,
+/// serif company name, underlined industry, a rule, then the address.
 class HteCompanyCard extends StatelessWidget {
   final HteCompany company;
   final VoidCallback onTap;
 
   const HteCompanyCard({super.key, required this.company, required this.onTap});
 
+  static IconData iconFor(String industry) {
+    final i = industry.toLowerCase();
+    if (i.contains('educ') || i.contains('school') || i.contains('univ')) return Icons.school;
+    if (i.contains('gov')) return Icons.account_balance;
+    if (i.contains('health') || i.contains('hospital') || i.contains('medic')) return Icons.local_hospital;
+    if (i.contains('bank') || i.contains('financ')) return Icons.savings;
+    if (i.contains('grocer') || i.contains('retail') || i.contains('store')) return Icons.storefront;
+    if (i.contains('it') || i.contains('tech') || i.contains('software')) return Icons.computer;
+    if (i.contains('media') || i.contains('broadcast')) return Icons.videocam;
+    if (i.contains('hotel') || i.contains('hospitality') || i.contains('food')) return Icons.restaurant;
+    if (i.contains('manufact') || i.contains('industrial')) return Icons.factory;
+    return Icons.apartment;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final address = company.address.isNotEmpty ? company.address : company.location;
     return Material(
-      color: AppColors.cardWhite,
-      borderRadius: BorderRadius.circular(18),
-      elevation: 1,
-      shadowColor: Colors.black.withValues(alpha: 0.06),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: Color(0xFFD9D9D9)),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.background,
-                child: Text(
-                  company.name.isNotEmpty
-                      ? company.name.substring(0, 1).toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryMaroon,
-                    fontSize: 18,
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: DeskColors.iconBox,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xFFD9C3C3)),
+                    ),
+                    child: Icon(iconFor(company.industry), color: StudentColors.maroon, size: 26),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      company.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      company.industry,
-                      style: const TextStyle(
-                        color: AppColors.accentOrange,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.location_on,
-                          size: 14,
-                          color: AppColors.textSecondary,
+                        Text(
+                          company.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: studentSerif(size: 21),
                         ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            company.location,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          company.industry,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: StudentColors.maroon,
+                            decoration: TextDecoration.underline,
+                            decorationColor: StudentColors.maroon,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              Padding(
+                padding: const EdgeInsets.only(left: 54, top: 6, bottom: 6),
+                child: Container(height: 1, color: const Color(0xFF3A3A3A)),
+              ),
+              Row(
+                children: [
+                  const SizedBox(width: 6),
+                  const Icon(Icons.location_on_outlined, size: 16, color: Color(0xFF6B6B6B)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      address,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF6B6B6B)),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),

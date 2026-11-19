@@ -37,4 +37,16 @@ async function sendOtpEmail(toEmail, code) {
   });
 }
 
-module.exports = { sendOtpEmail };
+// Plain notice email (account approved/declined). Callers treat failure
+// as non-fatal: SMTP may not be configured in every environment.
+async function sendNoticeEmail(toEmail, subject, text) {
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  await getTransporter().sendMail({
+    from: `TRACKIT <${from}>`,
+    to: toEmail,
+    subject,
+    text,
+  });
+}
+
+module.exports = { sendOtpEmail, sendNoticeEmail };

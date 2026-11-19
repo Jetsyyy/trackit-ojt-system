@@ -7,6 +7,8 @@ class TeacherRequirementStudentSummary {
   final String? avatarUrl;
   final String course;
   final String section;
+  final String? studentNumber;
+  final int? classId;
   final int totalDocuments;
   final int completedCount;
   final int needsReviewCount;
@@ -19,6 +21,8 @@ class TeacherRequirementStudentSummary {
     this.avatarUrl,
     required this.course,
     required this.section,
+    this.studentNumber,
+    this.classId,
     required this.totalDocuments,
     required this.completedCount,
     required this.needsReviewCount,
@@ -33,6 +37,8 @@ class TeacherRequirementStudentSummary {
       avatarUrl: json['avatarUrl'] as String?,
       course: json['course'] as String,
       section: json['section'] as String,
+      studentNumber: json['studentNumber'] as String?,
+      classId: json['classId'] as int?,
       totalDocuments: json['totalDocuments'] as int,
       completedCount: json['completedCount'] as int,
       needsReviewCount: json['needsReviewCount'] as int,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../models/admin_overview.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/ph_time.dart';
@@ -203,28 +204,22 @@ class _AdminOverviewStudentListScreenState extends State<AdminOverviewStudentLis
   }
 }
 
-// ---------------- View Attendance List ----------------
+// ---------------- View Weekly DTR & AR List ----------------
 
-class AdminOverviewAttendanceListScreen extends StatefulWidget {
-  final List<AdminOverviewAttendanceEntry> entries;
-  final int lateClockInHourPht;
+class AdminOverviewWeeklyListScreen extends StatefulWidget {
+  final List<AdminOverviewWeeklyEntry> entries;
 
-  const AdminOverviewAttendanceListScreen({
-    super.key,
-    required this.entries,
-    required this.lateClockInHourPht,
-  });
+  const AdminOverviewWeeklyListScreen({super.key, required this.entries});
 
   @override
-  State<AdminOverviewAttendanceListScreen> createState() =>
-      _AdminOverviewAttendanceListScreenState();
+  State<AdminOverviewWeeklyListScreen> createState() => _AdminOverviewWeeklyListScreenState();
 }
 
-class _AdminOverviewAttendanceListScreenState extends State<AdminOverviewAttendanceListScreen> {
+class _AdminOverviewWeeklyListScreenState extends State<AdminOverviewWeeklyListScreen> {
   String _query = '';
-  AdminOverviewAttendanceStatus? _filter;
+  AdminOverviewWeeklyStatus? _filter;
 
-  List<AdminOverviewAttendanceEntry> get _filtered {
+  List<AdminOverviewWeeklyEntry> get _filtered {
     var entries = widget.entries;
     if (_filter != null) entries = entries.where((e) => e.status == _filter).toList();
     if (_query.isNotEmpty) {
@@ -234,53 +229,62 @@ class _AdminOverviewAttendanceListScreenState extends State<AdminOverviewAttenda
             (e) =>
                 e.name.toLowerCase().contains(q) ||
                 (e.program?.toLowerCase().contains(q) ?? false) ||
-                (e.section?.toLowerCase().contains(q) ?? false),
+                (e.section?.toLowerCase().contains(q) ?? false) ||
+                (e.instructorName?.toLowerCase().contains(q) ?? false),
           )
           .toList();
     }
     return entries;
   }
 
-  (String, Color, Color) _statusStyle(AdminOverviewAttendanceStatus status) {
+  (String, Color, Color) _statusStyle(AdminOverviewWeeklyStatus status) {
     switch (status) {
-      case AdminOverviewAttendanceStatus.clockedIn:
-        return ('Clocked In', AppColors.successGreenBg, AppColors.successGreenText);
-      case AdminOverviewAttendanceStatus.lateMissed:
-        return ('Late / Missed', AppColors.statRedBg, AppColors.statRedIcon);
-      case AdminOverviewAttendanceStatus.notYetClockedIn:
-        return ('Not Yet Clocked In', AppColors.statOrangeBg, AppColors.statOrangeIcon);
+      case AdminOverviewWeeklyStatus.awaitingReview:
+        return ('Awaiting Review', AppColors.statBlueBg, AppColors.statBlueIcon);
+      case AdminOverviewWeeklyStatus.returned:
+        return ('Returned', AppColors.statOrangeBg, AppColors.statOrangeIcon);
+      case AdminOverviewWeeklyStatus.noRecent:
+        return ('No Recent Submission', AppColors.statRedBg, AppColors.statRedIcon);
+      case AdminOverviewWeeklyStatus.upToDate:
+        return ('Up to Date', AppColors.successGreenBg, AppColors.successGreenText);
+      case AdminOverviewWeeklyStatus.notStarted:
+        return ('Not Started', AppColors.background, AppColors.textSecondary);
     }
+  }
+
+  String _details(AdminOverviewWeeklyEntry e) {
+    final parts = <String>[
+      '${e.approvedWeeks} approved',
+      if (e.awaitingReviewWeeks > 0) '${e.awaitingReviewWeeks} awaiting review',
+      if (e.returnedWeeks > 0) '${e.returnedWeeks} returned',
+    ];
+    final last = e.lastWeekEnd == null
+        ? 'No weeks submitted yet'
+        : 'Last week ended ${DateFormat('MMM d, yyyy').format(e.lastWeekEnd!)}';
+    return '${parts.join(' | ')} -- $last';
   }
 
   @override
   Widget build(BuildContext context) {
     final entries = _filtered;
     return _DrillDownScaffold(
-      title: "Today's Attendance (${widget.entries.length})",
+      title: 'Weekly DTR & AR (${widget.entries.length})',
       child: Column(
         children: [
-          _SearchField(hint: 'Search student, program, section...', onChanged: (v) => setState(() => _query = v)),
+          _SearchField(hint: 'Search student, program, section, instructor...', onChanged: (v) => setState(() => _query = v)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 _FilterChip(label: 'All', selected: _filter == null, onTap: () => setState(() => _filter = null)),
-                _FilterChip(
-                  label: 'Clocked In',
-                  selected: _filter == AdminOverviewAttendanceStatus.clockedIn,
-                  onTap: () => setState(() => _filter = AdminOverviewAttendanceStatus.clockedIn),
-                ),
-                _FilterChip(
-                  label: 'Not Yet',
-                  selected: _filter == AdminOverviewAttendanceStatus.notYetClockedIn,
-                  onTap: () => setState(() => _filter = AdminOverviewAttendanceStatus.notYetClockedIn),
-                ),
-                _FilterChip(
-                  label: 'Late / Missed',
-                  selected: _filter == AdminOverviewAttendanceStatus.lateMissed,
-                  onTap: () => setState(() => _filter = AdminOverviewAttendanceStatus.lateMissed),
-                ),
+                for (final status in AdminOverviewWeeklyStatus.values)
+                  _FilterChip(
+                    label: _statusStyle(status).$1,
+                    selected: _filter == status,
+                    onTap: () => setState(() => _filter = status),
+                  ),
               ],
             ),
           ),
@@ -288,7 +292,7 @@ class _AdminOverviewAttendanceListScreenState extends State<AdminOverviewAttenda
           Expanded(
             child: entries.isEmpty
                 ? const EmptyStateView(
-                    icon: Icons.event_busy_outlined,
+                    icon: Icons.event_note_outlined,
                     title: 'No matching students',
                     message: 'Try a different search or filter.',
                   )
@@ -311,20 +315,18 @@ class _AdminOverviewAttendanceListScreenState extends State<AdminOverviewAttenda
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${e.program ?? '--'} - ${e.section ?? '--'}',
+                                    '${e.program ?? '--'} - ${e.section ?? '--'} | ${e.instructorName ?? 'Unassigned'}',
                                     style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
                                   ),
-                                  if (e.clockIn != null) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'In ${formatPh(e.clockIn!, 'h:mm a')}'
-                                      '${e.clockOut != null ? ' -- Out ${formatPh(e.clockOut!, 'h:mm a')}' : ''}',
-                                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                                    ),
-                                  ],
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _details(e),
+                                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                  ),
                                 ],
                               ),
                             ),
+                            const SizedBox(width: 8),
                             _Chip(label: label, bg: bg, fg: fg),
                           ],
                         ),
@@ -595,44 +597,6 @@ class AdminOverviewTasksScreen extends StatelessWidget {
                         '${d.studentName}${d.submittedAt != null ? ' -- Submitted ${formatPh(d.submittedAt!, 'MMM d, yyyy')}' : ''}',
                         style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
                       ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          _TaskSection(
-            title: 'Company Requests for Verification',
-            count: overview.companyVerification.length,
-            children: [
-              for (final c in overview.companyVerification)
-                _RowCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary)),
-                      Text(
-                        '${c.companyName ?? 'Company not named'} -- ${c.program ?? '--'} ${c.section ?? ''}',
-                        style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          _TaskSection(
-            title: 'Attendance Correction Requests',
-            count: overview.correctionRequests.length,
-            children: [
-              for (final r in overview.correctionRequests)
-                _RowCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${r.studentName} -- ${formatPh(r.workDate, 'MMM d, yyyy')}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
-                      ),
-                      Text(r.reason, style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary)),
                     ],
                   ),
                 ),

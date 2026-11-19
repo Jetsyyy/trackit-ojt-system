@@ -19,11 +19,11 @@ async function requireInstructorAuth(req, res, next) {
       return res.status(401).json({ success: false, message: 'Invalid token for this resource.' });
     }
 
-    const result = await pool.query('SELECT status FROM advisers WHERE id = $1', [
+    const result = await pool.query('SELECT status, approval_status FROM advisers WHERE id = $1', [
       payload.instructorId,
     ]);
     const instructor = result.rows[0];
-    if (!instructor || instructor.status === 'inactive') {
+    if (!instructor || instructor.status === 'inactive' || instructor.approval_status !== 'approved') {
       return res
         .status(403)
         .json({ success: false, message: 'This account has been deactivated.' });

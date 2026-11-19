@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../models/ojt_progress.dart';
+import '../../models/weekly_submission.dart';
 import '../../utils/app_colors.dart';
 import '../common/ojt_progress_status_badge.dart';
 import 'ojt_stat_tile.dart';
 
+/// Home's hours summary. Credited hours come only from weekly DTRs the
+/// instructor approved; hours still under review are shown separately.
 class OjtProgressCard extends StatelessWidget {
   final OjtProgress progress;
+  final VoidCallback onOpenWeekly;
 
-  const OjtProgressCard({super.key, required this.progress});
+  const OjtProgressCard({super.key, required this.progress, required this.onOpenWeekly});
 
   @override
   Widget build(BuildContext context) {
-    final estCompletion = DateFormat('MMM d, yyyy').format(
-      progress.estimatedCompletion,
-    );
+    final weeksLeft = progress.estimatedWeeksLeft;
+    final completed = progress.status == OjtProgressStatus.completed;
 
     return Container(
       width: double.infinity,
@@ -42,8 +44,8 @@ class OjtProgressCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          if (progress.status == OjtProgressStatus.completed)
-            _CompletedBanner(totalHoursAttended: progress.completedHours)
+          if (completed)
+            _CompletedBanner(totalHours: progress.completedHours)
           else
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,18 +55,15 @@ class OjtProgressCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Completed',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
+                        'Credited (approved)',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                       ),
                       const SizedBox(height: 4),
                       RichText(
                         text: TextSpan(
                           children: [
                             TextSpan(
-                              text: '${progress.completedHours}',
+                              text: formatHours(progress.completedHours),
                               style: const TextStyle(
                                 fontSize: 26,
                                 fontWeight: FontWeight.bold,
@@ -72,7 +71,7 @@ class OjtProgressCard extends StatelessWidget {
                               ),
                             ),
                             TextSpan(
-                              text: ' / ${progress.totalHours} Hours',
+                              text: ' / ${formatHours(progress.totalHours)} Hours',
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
@@ -95,21 +94,22 @@ class OjtProgressCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OjtStatTile(
-                  icon: Icons.hourglass_bottom,
-                  iconColor: AppColors.statOrangeIcon,
-                  backgroundColor: AppColors.statOrangeBg,
-                  value: '${progress.daysAttended} Days',
-                  label: 'Days Attended',
+                  icon: Icons.task_alt,
+                  iconColor: AppColors.successGreenText,
+                  backgroundColor: AppColors.successGreenBg,
+                  value: '${progress.approvedWeeks} '
+                      'Week${progress.approvedWeeks == 1 ? '' : 's'}',
+                  label: 'Approved Weeks',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: OjtStatTile(
-                  icon: Icons.calendar_today,
-                  iconColor: AppColors.statPurpleIcon,
-                  backgroundColor: AppColors.statPurpleBg,
-                  value: estCompletion,
-                  label: 'Est. Completion',
+                  icon: Icons.hourglass_bottom,
+                  iconColor: AppColors.statOrangeIcon,
+                  backgroundColor: AppColors.statOrangeBg,
+                  value: '${formatHours(progress.pendingHours)} Hours',
+                  label: 'For Approval',
                 ),
               ),
             ],
@@ -119,41 +119,55 @@ class OjtProgressCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OjtStatTile(
-                  icon: Icons.access_time,
-                  iconColor: AppColors.statRedIcon,
-                  backgroundColor: AppColors.statRedBg,
-                  value: '${_formatHours(progress.averageHoursPerDay)} Hours',
-                  label: 'Average Hours / Day',
+                  icon: Icons.bar_chart,
+                  iconColor: AppColors.statBlueIcon,
+                  backgroundColor: AppColors.statBlueBg,
+                  value: '${formatHours(progress.weeklyAverageHours)} Hours',
+                  label: 'Weekly Average',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: OjtStatTile(
-                  icon: Icons.bar_chart,
-                  iconColor: AppColors.statBlueIcon,
-                  backgroundColor: AppColors.statBlueBg,
-                  value: '${_formatHours(progress.weeklyAverageHours)} Hours',
-                  label: 'Weekly Average',
+                  icon: Icons.calendar_today,
+                  iconColor: AppColors.statPurpleIcon,
+                  backgroundColor: AppColors.statPurpleBg,
+                  value: completed
+                      ? 'Done'
+                      : weeksLeft == null
+                          ? '--'
+                          : '~$weeksLeft Week${weeksLeft == 1 ? '' : 's'}',
+                  label: 'Est. Time Left',
                 ),
               ),
             ],
           ),
+          if (!completed) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onOpenWeekly,
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Submit Weekly DTR & AR'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryMaroon,
+                  side: const BorderSide(color: AppColors.primaryMaroon),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
-
-  String _formatHours(double hours) {
-    return hours == hours.roundToDouble()
-        ? hours.toInt().toString()
-        : hours.toStringAsFixed(1);
-  }
 }
 
 class _CompletedBanner extends StatelessWidget {
-  final int totalHoursAttended;
+  final double totalHours;
 
-  const _CompletedBanner({required this.totalHoursAttended});
+  const _CompletedBanner({required this.totalHours});
 
   @override
   Widget build(BuildContext context) {
@@ -170,7 +184,7 @@ class _CompletedBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Completed — Total Hours Attended: $totalHoursAttended hrs',
+              'Completed: ${formatHours(totalHours)} credited hours',
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
@@ -205,10 +219,10 @@ class _ProgressBar extends StatelessWidget {
         ),
         Text(
           '${(ratio * 100).round()}%',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: ratio > 0.08 ? Colors.white : AppColors.textSecondary,
           ),
         ),
       ],

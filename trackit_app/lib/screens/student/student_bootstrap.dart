@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../models/attendance.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/student.dart';
 import '../../models/student_profile.dart';
 import '../../services/api_client.dart';
-import '../../services/attendance_service.dart';
+import '../../services/progress_service.dart';
 import '../../services/student_profile_service.dart';
 import '../../utils/app_colors.dart';
 import 'student_shell.dart';
@@ -37,21 +36,17 @@ class _StudentBootstrapState extends State<StudentBootstrap> {
 
   Future<_BootstrapData> _load() async {
     final profileService = HttpStudentProfileService(widget.client);
-    final attendanceService = HttpAttendanceService(widget.client);
+    final progressService = HttpProgressService(widget.client);
 
     final results = await Future.wait([
       profileService.getProfile(),
-      attendanceService.getToday(),
-      attendanceService.getProgress(),
-      attendanceService.getHistory(),
+      progressService.getProgress(),
     ]);
 
     final profile = results[0] as StudentProfile;
     return _BootstrapData(
       student: Student.fromProfile(profile),
-      todayAttendance: results[1] as TodayAttendance,
-      progress: results[2] as OjtProgress,
-      history: results[3] as List<AttendanceHistoryEntry>,
+      progress: results[1] as OjtProgress,
     );
   }
 
@@ -130,8 +125,6 @@ class _StudentBootstrapState extends State<StudentBootstrap> {
           client: widget.client,
           student: data.student,
           initialProgress: data.progress,
-          initialAttendance: data.todayAttendance,
-          initialHistory: data.history,
           onLoggedOut: widget.onLoggedOut,
         );
       },
@@ -141,14 +134,7 @@ class _StudentBootstrapState extends State<StudentBootstrap> {
 
 class _BootstrapData {
   final Student student;
-  final TodayAttendance todayAttendance;
   final OjtProgress progress;
-  final List<AttendanceHistoryEntry> history;
 
-  const _BootstrapData({
-    required this.student,
-    required this.todayAttendance,
-    required this.progress,
-    required this.history,
-  });
+  const _BootstrapData({required this.student, required this.progress});
 }

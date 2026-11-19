@@ -28,20 +28,14 @@ class AppBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.cardWhite,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        border: Border(top: BorderSide(color: Color(0xFF1F1F1F), width: 1)),
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 64,
+          height: 70,
           child: Row(
             children: [
               for (var i = 0; i < items.length; i++)
@@ -73,16 +67,18 @@ class _NavButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.accentOrange : AppColors.textSecondary;
+    // Mockup: black outline icons; the selected tab gets an orange bar
+    // along the bottom edge.
+    const color = Color(0xFF1F1F1F);
     return InkWell(
       onTap: onTap,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Stack(
             clipBehavior: Clip.none,
             children: [
-              Icon(item.icon, color: color, size: 22),
+              Icon(item.icon, color: color, size: 28),
               if (item.badgeCount > 0)
                 Positioned(
                   right: -6,
@@ -122,13 +118,13 @@ class _NavButton extends StatelessWidget {
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Container(
-            height: 3,
-            width: 28,
+            height: 7,
+            width: 62,
             decoration: BoxDecoration(
               color: selected ? AppColors.accentOrange : Colors.transparent,
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
             ),
           ),
         ],

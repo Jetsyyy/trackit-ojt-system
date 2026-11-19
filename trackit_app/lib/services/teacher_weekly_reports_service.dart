@@ -1,24 +1,20 @@
 import '../models/teacher_weekly_report_row.dart';
 import 'api_client.dart';
 
-class TeacherStudentWeeklyReports {
-  final int studentId;
-  final String studentName;
-  final String? avatarUrl;
-  final List<TeacherWeeklyReportRow> reports;
-
-  const TeacherStudentWeeklyReports({
-    required this.studentId,
-    required this.studentName,
-    this.avatarUrl,
-    required this.reports,
-  });
-}
-
+/// Instructor review of weekly DTR + AR submissions (System Revisions
+/// item 13). Approving a week credits its claimed hours to the student;
+/// returning it requires remarks and lets the student resubmit.
 abstract class TeacherWeeklyReportsService {
-  Future<List<TeacherWeeklyReportStudentSummary>> getStudents();
+  Future<List<TeacherWeeklyStudent>> getStudents();
 
-  Future<TeacherStudentWeeklyReports> getStudentReports(int studentId);
+  Future<TeacherStudentWeeks> getStudentWeeks(int studentId);
+
+  Future<TeacherStudentWeeks> reviewWeek({
+    required int studentId,
+    required int weekNumber,
+    required bool approve,
+    String? remarks,
+  });
 }
 
 class HttpTeacherWeeklyReportsService implements TeacherWeeklyReportsService {
@@ -27,26 +23,33 @@ class HttpTeacherWeeklyReportsService implements TeacherWeeklyReportsService {
   HttpTeacherWeeklyReportsService(this.client);
 
   @override
-  Future<List<TeacherWeeklyReportStudentSummary>> getStudents() async {
+  Future<List<TeacherWeeklyStudent>> getStudents() async {
     final response = await client.get('/api/teacher/weekly-reports/students');
-    final rows = response['students'] as List<dynamic>;
-    return rows
-        .map((row) => TeacherWeeklyReportStudentSummary.fromJson(row as Map<String, dynamic>))
+    return (response['students'] as List<dynamic>)
+        .map((row) => TeacherWeeklyStudent.fromJson(row as Map<String, dynamic>))
         .toList();
   }
 
   @override
-  Future<TeacherStudentWeeklyReports> getStudentReports(int studentId) async {
+  Future<TeacherStudentWeeks> getStudentWeeks(int studentId) async {
     final response = await client.get('/api/teacher/weekly-reports/students/$studentId');
-    final student = response['student'] as Map<String, dynamic>;
-    final rows = response['reports'] as List<dynamic>;
-    return TeacherStudentWeeklyReports(
-      studentId: student['id'] as int,
-      studentName: student['name'] as String,
-      avatarUrl: student['avatarUrl'] as String?,
-      reports: rows
-          .map((row) => TeacherWeeklyReportRow.fromJson(row as Map<String, dynamic>))
-          .toList(),
+    return TeacherStudentWeeks.fromJson(response);
+  }
+
+  @override
+  Future<TeacherStudentWeeks> reviewWeek({
+    required int studentId,
+    required int weekNumber,
+    required bool approve,
+    String? remarks,
+  }) async {
+    final response = await client.patch(
+      '/api/teacher/weekly-reports/students/$studentId/weeks/$weekNumber',
+      body: {
+        'decision': approve ? 'approved' : 'rejected',
+        if (remarks != null && remarks.isNotEmpty) 'remarks': remarks,
+      },
     );
+    return TeacherStudentWeeks.fromJson(response);
   }
 }

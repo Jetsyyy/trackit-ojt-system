@@ -205,6 +205,8 @@ class _AdminArchiveScreenState extends State<AdminArchiveScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(isWide),
+            const SizedBox(height: 12),
+            _ArchiveYearBar(service: _service, onArchived: _loadYears),
             const SizedBox(height: 16),
             Expanded(
               child: _yearsLoading
@@ -223,9 +225,8 @@ class _AdminArchiveScreenState extends State<AdminArchiveScreen> {
                         icon: Icons.archive_outlined,
                         title: 'Nothing archived yet',
                         message:
-                            'Past academic years will appear here once a newer academic '
-                            "year exists in Class Management. The current year is never "
-                            'archived.',
+                            'Past academic years appear here after you archive the active '
+                            'year with the button above.',
                       ),
                     )
                   : _buildContent(isWide),
@@ -799,6 +800,259 @@ class _StudentTable extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Archive the active academic year (System Revisions item 20) and
+/// download archived HTE Directory snapshots. Archiving asks the Admin to
+/// re-enter their email and password, saves that year's HTE Directory
+/// with each company's students, and makes the next year active.
+class _ArchiveYearBar extends StatefulWidget {
+  final AdminArchiveService service;
+  final Future<void> Function() onArchived;
+
+  const _ArchiveYearBar({required this.service, required this.onArchived});
+
+  @override
+  State<_ArchiveYearBar> createState() => _ArchiveYearBarState();
+}
+
+class _ArchiveYearBarState extends State<_ArchiveYearBar> {
+  ArchiveStatus? _status;
+  List<HteSnapshotSummary> _snapshots = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final results = await Future.wait([widget.service.getStatus(), widget.service.getHteSnapshots()]);
+      if (!mounted) return;
+      setState(() {
+        _status = results[0] as ArchiveStatus;
+        _snapshots = results[1] as List<HteSnapshotSummary>;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _snack(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.statRedIcon : AppColors.successGreenText,
+      ),
+    );
+  }
+
+  Future<void> _archive() async {
+    final status = _status;
+    if (status?.activeYear == null) return;
+    final result = await showDialog<ArchiveResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _ArchiveConfirmDialog(service: widget.service, status: status!),
+    );
+    if (result == null || !mounted) return;
+    _snack('Academic Year ${result.archivedYear} archived (${result.students} placements). '
+        '${result.activeYear} is now active.');
+    await _load();
+    await widget.onArchived();
+  }
+
+  Future<void> _download(HteSnapshotSummary snapshot, String format) async {
+    try {
+      final file = await widget.service.downloadHteSnapshot(snapshot.academicYear, format: format);
+      downloadBytes(filename: file.filename ?? 'HTE-Archive-${snapshot.academicYear}.$format', bytes: file.bytes);
+    } catch (e) {
+      if (mounted) _snack(e is ApiException ? e.message : 'Could not download.', error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox(height: 4, child: LinearProgressIndicator());
+    final status = _status;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.cardWhite, borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Icon(Icons.event_available_outlined, color: AppColors.primaryMaroon, size: 20),
+              Text(
+                'Active academic year: ${status?.activeYear ?? 'not set'}',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+              if (status?.activeYear != null)
+                ElevatedButton.icon(
+                  onPressed: status!.alreadyArchived ? null : _archive,
+                  icon: const Icon(Icons.archive_outlined, size: 18),
+                  label: Text(status.alreadyArchived
+                      ? '${status.activeYear} already archived'
+                      : 'Archive ${status.activeYear}'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryMaroon,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+            ],
+          ),
+          if (_snapshots.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Archived HTE Directory records',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in _snapshots)
+                  PopupMenuButton<String>(
+                    tooltip: 'Download ${s.academicYear}',
+                    onSelected: (format) => _download(s, format),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'xlsx', child: Text('Excel (.xlsx)')),
+                      PopupMenuItem(value: 'pdf', child: Text('PDF')),
+                    ],
+                    child: Chip(
+                      avatar: const Icon(Icons.download_outlined, size: 16, color: AppColors.primaryMaroon),
+                      label: Text('${s.academicYear} · ${s.companies} HTEs · ${s.students} students'),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchiveConfirmDialog extends StatefulWidget {
+  final AdminArchiveService service;
+  final ArchiveStatus status;
+
+  const _ArchiveConfirmDialog({required this.service, required this.status});
+
+  @override
+  State<_ArchiveConfirmDialog> createState() => _ArchiveConfirmDialogState();
+}
+
+class _ArchiveConfirmDialogState extends State<_ArchiveConfirmDialog> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _saving = false;
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
+      setState(() => _error = 'Enter your admin email and password.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.service.archiveActiveYear(
+        email: _email.text.trim(),
+        password: _password.text,
+      );
+      if (mounted) Navigator.of(context).pop(result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e is ApiException ? e.message : 'Could not archive. Please try again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final year = widget.status.activeYear;
+    final next = widget.status.nextYear;
+    return AlertDialog(
+      title: Text('Archive Academic Year $year?'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This saves $year\'s HTE Directory with every company\'s students, then makes '
+              '$next the active academic year. It can\'t be undone.',
+            ),
+            const SizedBox(height: 12),
+            const Text('Enter your admin login to confirm:', style: TextStyle(fontWeight: FontWeight.w600)),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_error!, style: const TextStyle(color: AppColors.statRedIcon)),
+              ),
+            TextField(
+              controller: _email,
+              enabled: !_saving,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'Admin email'),
+            ),
+            TextField(
+              controller: _password,
+              enabled: !_saving,
+              obscureText: _obscure,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                labelText: 'Password',
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryMaroon,
+            foregroundColor: Colors.white,
+          ),
+          child: _saving
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : Text('Archive & start $next'),
+        ),
+      ],
     );
   }
 }

@@ -1,14 +1,10 @@
 import '../models/instructor_class.dart';
 import 'api_client.dart';
 
+/// The instructor's assigned sections. Sections are created and assigned
+/// by the Admin (System Revisions item 19), so there's no create call.
 abstract class TeacherClassesService {
   Future<List<InstructorClass>> getClasses();
-
-  Future<InstructorClass> createClass({
-    required String program,
-    required String section,
-    required String academicYear,
-  });
 }
 
 class HttpTeacherClassesService implements TeacherClassesService {
@@ -23,18 +19,5 @@ class HttpTeacherClassesService implements TeacherClassesService {
     return rows
         .map((row) => InstructorClass.fromJson(row as Map<String, dynamic>))
         .toList();
-  }
-
-  @override
-  Future<InstructorClass> createClass({
-    required String program,
-    required String section,
-    required String academicYear,
-  }) async {
-    final response = await client.post(
-      '/api/teacher/classes',
-      body: {'program': program, 'section': section, 'academicYear': academicYear},
-    );
-    return InstructorClass.fromJson(response['class'] as Map<String, dynamic>);
   }
 }

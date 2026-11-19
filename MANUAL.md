@@ -1,10 +1,16 @@
-# TRACKIT — Student Module Manual
+# TRACKIT — System Manual
 
 **TRACKIT** (Centralized OJT Tracking and Documentation System) is a capstone
 project for DCSE at Dalubhasaan ng Lungsod ng San Pablo. This manual covers
-everything built so far: the **Student Module** (Flutter, mobile) and its
-real backend (Node/Express + PostgreSQL on Neon). The Instructor and Admin
-modules are not built yet — see [What's Not Built Yet](#whats-not-built-yet).
+the three modules — **Student**, **Instructor** and **Admin** (one Flutter
+codebase, run on mobile and the web) — and their shared backend
+(Node/Express + PostgreSQL on Neon).
+
+After the capstone defense, the panel's System Revisions replaced daily
+clock in/out attendance with **weekly DTR & AR submissions**: each week the
+student uploads that week's Daily Time Record (DTR) and Accomplishment
+Report (AR) and enters the hours claimed. **Only weeks the instructor
+approves count as OJT hours.**
 
 ---
 
@@ -12,12 +18,13 @@ modules are not built yet — see [What's Not Built Yet](#whats-not-built-yet).
 
 | Layer | Technology |
 |---|---|
-| Mobile app (Student) | Flutter, Material 3 |
+| App (Student, Instructor, Admin) | Flutter (mobile + Flutter Web), Material 3 |
 | Backend API | Node.js + Express |
 | Database | PostgreSQL (hosted on Neon, serverless) |
 | Auth | JWT (`jsonwebtoken`) + `bcrypt` password hashing |
-| File uploads | `multer` (avatars, requirement docs) |
-| Device location | `geolocator` (Attendance geofencing) |
+| File uploads | `multer` (avatars, requirement docs, weekly DTR/AR files, templates); `file_picker` / `image_picker` in the app |
+| Reports | `exceljs` (Excel) and `pdfkit` (PDF) for downloadable reports |
+| Email | `nodemailer` (OTP codes, account approval notices; optional) |
 | Client state | `flutter_secure_storage` (JWT token), `ChangeNotifier` (notifications badge) |
 
 **Why this stack:** Flutter was chosen so the Student and Instructor mobile
@@ -42,11 +49,13 @@ trackit-ojt-system/
     │   ├── services/           # repository-style API clients (Http*Service)
     │   ├── screens/
     │   │   ├── auth/           # login / register
-    │   │   └── student/        # Home, Attendance, Documents, Notifications, Profile
+    │   │   ├── student/        # Home, Weekly, Document, Notification, Profile
+    │   │   ├── teacher/        # Instructor: Home, Students, Document, Notification, Profile
+    │   │   └── admin/          # Admin web dashboard
     │   ├── widgets/
     │   │   ├── common/         # shared UI (headers, badges, empty states, skeletons)
     │   │   └── student/        # feature-specific widgets
-    │   └── utils/               # app_colors.dart, location_helper.dart
+    │   └── utils/               # app_colors.dart, ph_time.dart, file_download.dart, ...
     └── server/
         ├── index.js             # Express app entry point
         ├── db.js                # PostgreSQL connection pool
@@ -73,14 +82,21 @@ trackit-ojt-system/
             ├── migration_admin_profile.sql
             ├── migration_requirement_templates.sql
             ├── migration_admin_sections.sql
-            └── migration_admin_instructors.sql                # run last
+            ├── migration_admin_instructors.sql
+            ├── migration_weekly_dtr_submissions.sql
+            ├── migration_phase2_accounts.sql
+            ├── migration_phase3_requirements.sql
+            ├── migration_phase4_hte.sql
+            ├── migration_account_activity.sql
+            ├── migration_final_documents_ready.sql
+            └── migration_requirement_details.sql              # run last
 ```
 
 Every feature follows the same pattern: a Dart **model**, an abstract
 **service interface** with an `Http*Service` implementation that calls the
 real API, a **screen**, and small reusable **widgets**. Nested nav ("Tab
-Navigators") are used inside the Document, Attendance, and Profile tabs so
-pushing a sub-screen keeps the bottom nav bar visible.
+Navigators") are used inside the tabs so pushing a sub-screen keeps the
+bottom nav bar (or, on a wide screen, the side menu) visible.
 
 ---
 
@@ -119,9 +135,18 @@ Requires `trackit_app/.env` (see `trackit_app/.env.example`) with
 19. `migration_requirement_templates.sql`
 20. `migration_admin_sections.sql`
 21. `migration_admin_instructors.sql`
+22. `migration_weekly_dtr_submissions.sql`
+23. `migration_phase2_accounts.sql`
+24. `migration_phase3_requirements.sql`
+25. `migration_phase4_hte.sql`
+26. `migration_account_activity.sql` (Profile: last password change, login and account activity)
+27. `migration_final_documents_ready.sql` (Final Documents: "I have all the Documents Ready")
+28. `migration_requirement_details.sql` (Admin Documents: photocopies required, last updated / updated by, template size)
 
 All migrations are non-destructive (`ADD COLUMN IF NOT EXISTS`, etc.) and
-safe to re-run.
+safe to re-run. Migrations 4 and 12 belong to the retired clock in/out
+feature; they are still run so the older tables exist, but the app no
+longer uses them.
 
 ### App
 ```powershell
@@ -139,10 +164,17 @@ flutter run -d chrome
 
 ### 4.1 Authentication
 - Register / Login with email + password (`bcrypt` hashed).
+- **Students** register with their section's class code. The account stays
+  **pending** until that section's instructor approves it; a pending or
+  declined student is blocked at login with a message.
+- **Instructors** register with a single-use **instructor registration
+  code** (`INS-XXXX-XXXX`) generated by the Admin, then wait for the Admin
+  to approve them and assign their sections.
 - JWT issued on login, stored via `flutter_secure_storage`, attached to
   every API request as a bearer token.
 - `AuthGate` decides whether to show the login flow or the Student Shell
-  based on whether a valid token is stored.
+  based on whether a valid token is stored. All OJT dates and times are shown
+in Philippine Standard Time.
 
 ### 4.2 Home Tab
 - **Profile card**: student name, program, section.
@@ -151,74 +183,66 @@ flutter run -d chrome
   the company name with a logo-style icon avatar (there's no real logo
   upload — this is a generic building-icon avatar consistent with the
   rest of the app's avatar style).
-- **OJT Hours Progress**: completed/total hours, percentage bar, days
-  attended, estimated completion date, average hours/day, weekly average.
+- **OJT Hours Progress**: credited/required hours (approved weeks only),
+  hours awaiting approval, percentage bar, approved weeks, estimated
+  completion date and weekly average. The required hours can differ per
+  student, so OJT length is flexible.
 - **Status badge**: **On Track / Behind / Needs Attention / Ahead of
   Schedule**, computed server-side from the student's **OJT Start Date**
-  (self-reported) against an assumed standard pace (8 hrs/weekday), plus a
-  "Needs Attention" trigger if there's been no clock-in for 7+ days. Once
-  hours reach the requirement, it becomes a **"Completed — Total Hours
-  Attended: X hrs"** banner.
+  (self-reported) against an assumed standard pace (8 hrs/weekday, about 40
+  hrs/week), plus a "Needs Attention" trigger if the student has gone too
+  long without a weekly submission. Once credited hours reach the
+  requirement, it becomes a **"Completed"** banner.
 - **Latest Announcement/Notification preview**: the 3 most recent
   notifications (real data, shared with the Notifications tab), tap to
   mark read and jump to the relevant tab, "See All" to open Notifications.
 
-### 4.3 Attendance Tab
-- **OJT Hours Progress** summary (mirrors Home).
-- **Today's Attendance**: clock-in time, clock-out time, total hours for
-  the day, and an overall status pill (Completed / Ongoing / Unavailable).
-- **Clock In / Clock Out**: captures the device's GPS position and sends
-  it to the server, which rejects the request if the student is more than
-  **100 meters** from their company's saved location, or if that location
-  hasn't been set yet.
-- **Company location ("geofence center")**: captured by the student via a
-  **"Set My Location"** button on Confirm Company Details while physically
-  at the company (there's no Admin module yet to set a verified location
-  instead).
-- **Quick Actions**: the Clock In/Out button, and a **Correction Request
-  Form** button.
-- **Correction Request Form**: required reason/note, optional file
-  attachment, submitted for instructor review. Stays "Pending" since
-  there's no Instructor module yet to approve/reject it — the workflow
-  and data model are ready for when that exists.
-- **Attendance History**: full chronological log (date, clock in/out,
-  total hours, status) plus the student's Correction Request history,
-  reachable via "View All".
+### 4.3 Weekly Tab (DTR & AR)
+- One slot per **OJT week**, generated from the student's OJT Start Date
+  through the current week.
+- **Submitting a week**: upload the week's **DTR** and **AR** (1–5 files
+  each; PDF or image, since a DTR is usually a phone photo or a scan) and
+  enter the **hours claimed** from that DTR (more than 0, at most 168, up
+  to 2 decimal places).
+- **Statuses**: *Submitted* (awaiting instructor review) → *Approved* (the
+  claimed hours are now credited) or *Returned* (rejected with the
+  instructor's remarks; the student fixes it and resubmits).
+- Replaced files are deleted from the server on resubmit, so old uploads
+  don't pile up.
+- Once the required hours are complete, no more weekly submissions are
+  accepted.
+- The summary at the top shows credited hours, hours awaiting approval and
+  the pace badge (same numbers as Home).
 
 ### 4.4 Documents Tab
-Three sections, reached from a hub screen:
+Reached from a hub screen (weekly DTR & AR moved to its own Weekly tab):
 
-**HTE Directory** — a read-only, admin-seeded list of partner companies
-(name, industry, address, contact info, available slots). For reference
-only; students apply directly, not through the app.
+**HTE Directory** — a read-only list of partner companies maintained by
+the Admin (name, industry, address, contact info, available slots). For
+reference only; students apply directly, not through the app.
 
 **OJT Requirements** — a 4-phase sequential workflow (Pre-Application →
 Requirements → Internship Docs → Final Documents). Each phase unlocks once
-the previous one is fully submitted. Each document supports:
-- Download Template (where applicable)
+the previous one is fully submitted. The list itself is managed only by the
+Admin (Official Requirements). Each document supports:
+- Download Template (where the Admin uploaded one). Documents **issued by
+  an office** (e.g. the registrar) have no download — the student gets them
+  from that office and uploads the signed copy.
 - Upload / Re-upload
 - Submission status (Missing/Submitted/Approved/Rejected)
-- **Remarks** — instructor feedback on a rejection (field is live; no
-  Instructor module yet to write it)
+- **Remarks** — the instructor's feedback when a document is rejected
 
 Once all 4 phases hit 100%, a **Confirm Company Details** step appears
 (not counted in the progress bar):
 - Manual, self-reported entry: company name, address, industry,
-  supervisor name, contact number, and **OJT Start Date**. Done manually
-  (not OCR/auto-extracted) so students can correct any misreads from their
-  uploaded documents.
-- Independent of the HTE Directory — the student's real company doesn't
-  need to be listed there.
+  supervisor name, contact number, and **OJT Start Date**. Company names
+  are suggested as the student types.
+- **Entered once.** After saving, the company details are locked; only the
+  **supervisor** (name and contact) can still be updated.
+- A company the student enters that isn't in the HTE Directory yet is added
+  to it automatically, and the student is linked to it as a placement. No
+  Admin approval is needed.
 - This is the source of truth for the Home/Profile company card.
-- Also includes the **"Set My Location"** GPS capture for the Attendance
-  geofence.
-
-**Activity Reports** — Weekly Accomplishment Reports (AR): one recurring
-upload slot per OJT week, auto-generated from the student's OJT Start Date
-through the current week. Purely a record/compilation — **no hours field,
-no link to attendance or hours calculation**. Each week: a required
-accomplishments write-up + at least one file attachment. One submission
-per week is enforced by a database constraint, not just the UI.
 
 ### 4.5 Notifications Tab
 - Categorized (Admin / Instructor / System), searchable, filterable
@@ -227,12 +251,52 @@ per week is enforced by a database constraint, not just the UI.
 - Tapping a notification marks it read and deep-links to the relevant tab.
 
 ### 4.6 Profile Tab
-- Editable avatar (UI ready; real upload needs a camera/gallery plugin
-  not wired up yet).
+- Editable avatar (camera or gallery upload).
 - Adviser / Company / Supervisor contact rows (Company/Supervisor come
   from Confirm Company Details).
 - **Help Center**: FAQs, guides, policies (static content, DB-backed).
 - **Settings**: account info, logout.
+
+### 4.7 Instructor Module
+Five tabs (Home, Students, Document, Notification, Profile). On a phone they
+are a bottom bar; on a laptop or desktop (900 px wide or more) they become a
+**left side menu** and the content is centered at a readable width.
+- **Home**: assigned students summary and *Needs your Attention*:
+  registration requests, requirements to review, and weekly DTR & AR to
+  review (with counts).
+- **Students**: class information and class code, **Registration
+  Requests** (approve, or decline with a reason; the student is emailed
+  when SMTP is configured), the student list with search/filters, and each
+  student's details.
+- **Download Records**: on the Students tab, exports every assigned
+  student as **Excel** (sheets *Students* and *Weekly DTR & AR*) or **PDF**
+  (summary table plus each student's weekly log).
+- **Document**: **Weekly DTR & AR Review** (open the files, approve the
+  claimed hours, or return the week with remarks) and **Official
+  Requirements** review by student.
+- **Notification / Profile**: notices, announcements, account settings.
+
+### 4.8 Admin Module (web)
+- **Overview**: totals for the selected academic year; weekly DTR & AR to
+  review; a *Weekly DTR & AR Submissions* chart (approved / awaiting review
+  / returned) with a **Weekly List** per student (Awaiting Review,
+  Returned, No Recent Submission, Up to Date, Not Started); OJT completion
+  status; overall hours; pending tasks; and **students at risk** (below 50%
+  of required hours, no DTR & AR in the last 2 weeks, behind schedule).
+- **Instructors & Sections**: *Requests* (approve an instructor and assign
+  sections, or decline), *Registration Codes* (generate / revoke single-use
+  instructor codes), *Sections* (a simple list of sections with their
+  instructor), and *Faculty*.
+- **Official Requirements**: the only place the requirements list is
+  managed — add, edit, delete (only if nothing was submitted), reorder
+  within a phase, set the issuing office, and upload template files.
+- **HTE Directory**: companies with the students placed there, filter by
+  region/city, search, and **Download Report** (Excel or PDF).
+- **Announcements** and **Profile**.
+- **Archive**: archive the active academic year after confirming with the
+  admin's email and password. This saves a snapshot of the HTE Directory
+  placements and makes the next academic year active. Archived snapshots
+  can be downloaded as Excel or PDF.
 
 ---
 
@@ -244,19 +308,21 @@ per week is enforced by a database constraint, not just the UI.
 | `student_profiles` | 1:1 extension: phone, adviser link, self-reported company (name/address/industry/supervisor/contact/lat/lng/**ojt_start_date**) |
 | `advisers` | OJT adviser directory |
 | `hte_companies` | HTE Directory listings (reference only) |
-| `attendance_records` | One row per student per day (clock_in/clock_out) |
-| `attendance_corrections` | Correction requests (pending/approved/rejected) |
+| `attendance_records` / `attendance_corrections` | Retired clock in/out data (kept, no longer used) |
 | `ojt_requirement_phases` / `ojt_requirement_templates` | The 4 fixed phases and their document templates |
 | `student_requirement_submissions` | One row per student per requirement document, incl. `remarks` |
-| `activity_reports` | Weekly Accomplishment Reports, keyed by `(student_id, week_number)` |
-| `activity_report_attachments` | Files attached to a weekly report |
+| `activity_reports` | Weekly DTR & AR submissions, keyed by `(student_id, week_number)`: `claimed_hours`, `status` (submitted/approved/rejected), `remarks`, reviewer |
+| `activity_report_attachments` | DTR and AR files attached to a week |
+| `instructor_classes` | Sections (program, section, academic year, class code, instructor) |
+| `app_settings` | System settings such as `active_academic_year` |
 | `notifications` / `notification_preferences` | Notification feed and per-category toggles |
 | `help_center_articles` | Static Help Center content |
 
 Two deliberate design choices worth knowing:
-- **Computed, not stored.** OJT hours progress (completed hours, days
-  attended, averages, status) is computed from `attendance_records` with
-  SQL aggregates on every request, not cached in a column — avoids drift.
+- **Computed, not stored.** Credited OJT hours are the sum of
+  `claimed_hours` of **approved** weeks in `activity_reports`, computed on
+  every request in one place (`server/utils/creditedHours.js`), so the
+  student, instructor and admin always see the same number.
 - **Additive migrations.** Every schema change after the initial
   `schema.sql` is a separate, non-destructive `migration_*.sql` file
   (`ADD COLUMN IF NOT EXISTS`, etc.) so real student data is never at risk.
@@ -265,47 +331,62 @@ Two deliberate design choices worth knowing:
 
 ## 6. API Endpoints
 
-All routes below (except `/api/auth/*`) require a `Bearer` JWT and are
-scoped to the logged-in student.
+All routes below (except `/api/auth/*`) require a `Bearer` JWT. Student
+routes are scoped to the logged-in student, `/api/teacher/*` to the
+logged-in instructor's own students, and `/api/admin/*` to admins.
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/auth/register` | Create account |
 | POST | `/api/auth/login` | Get a JWT |
-| GET | `/api/attendance/today` | Today's clock in/out |
-| POST | `/api/attendance/clock-in` | Clock in (geofence-checked) |
-| POST | `/api/attendance/clock-out` | Clock out (geofence-checked) |
-| GET | `/api/attendance/history` | Full attendance log |
-| GET | `/api/attendance/progress` | Hours, days, averages, status badge |
-| GET | `/api/attendance/corrections` | List correction requests |
-| POST | `/api/attendance/corrections` | Submit a correction request |
+| GET | `/api/attendance/progress` | Student: credited/pending hours, weeks, pace badge (old path kept; numbers come from approved weeks) |
 | GET | `/api/hte-companies` | HTE Directory listing |
 | GET | `/api/requirements` | 4-phase requirements + submission status |
 | POST | `/api/requirements/:templateId/submit` | Upload/submit a requirement doc |
-| GET | `/api/activity-reports` | Generated weekly report slots |
-| POST | `/api/activity-reports/:weekNumber/submit` | Submit a week's report |
+| GET | `/api/activity-reports` | Weekly DTR/AR slots + credited/pending hours summary |
+| POST | `/api/activity-reports/:weekNumber/submit` | Submit a week: multipart `dtr` + `ar` files (PDF/image, up to 5 each) and `claimedHours` |
+| GET | `/api/teacher/weekly-reports/students` | Instructor: assigned students' weekly progress, pending reviews first |
+| GET | `/api/teacher/weekly-reports/students/:studentId` | Instructor: one student's weeks with DTR/AR files |
+| PATCH | `/api/teacher/weekly-reports/students/:studentId/weeks/:weekNumber` | Instructor: `{ decision: approved\|rejected, remarks }` (remarks required to reject) |
+| GET | `/api/teacher/students/export?format=xlsx\|pdf` | Instructor: download all assigned students' records |
+| GET | `/api/teacher/students/requests` | Instructor: students waiting for registration approval |
+| PATCH | `/api/teacher/students/requests/:studentId` | Instructor: `{ decision, reason }` (reason required to decline) |
+| GET/POST | `/api/admin/instructors/registration-codes` | Admin: list / generate single-use instructor codes |
+| PATCH | `/api/admin/instructors/registration-codes/:id/revoke` | Admin: revoke an unused code |
+| GET | `/api/admin/instructors/requests` | Admin: instructors waiting for approval |
+| PATCH | `/api/admin/instructors/requests/:id` | Admin: `{ decision, sectionIds, reason }` (approve needs ≥1 unassigned section) |
+| GET | `/api/admin/overview?academicYear=` | Admin: Overview dashboard data (weekly DTR & AR counts, completion, hours, at-risk, Weekly List) |
+| PATCH | `/api/admin/classes/:id/instructor` | Admin: assign/unassign a section's instructor |
+| PATCH | `/api/profile/company/supervisor` | Student: update supervisor after the one-time company entry |
+| GET | `/api/hte-companies/suggest?q=` | Student: company name suggestions |
+| GET/POST | `/api/admin/requirements` | Admin: Official Requirements by phase / add one `{ phaseId, name, description, issuedBy }` |
+| PATCH/DELETE | `/api/admin/requirements/:id` | Admin: edit name/description/issuing office, or delete (only if no submissions) |
+| PATCH | `/api/admin/requirements/:id/move` | Admin: `{ direction: up\|down }` within its phase |
+| POST/DELETE | `/api/admin/requirements/:id/template` | Admin: upload/replace or remove the template file |
+| GET | `/api/admin/hte-companies?academicYear=&location=&search=` | Admin: HTE Directory with each company's students (location = city or region, e.g. `Metro Manila`) |
+| GET | `/api/admin/hte-companies/locations` | Admin: regions and cities with company counts |
+| GET | `/api/admin/hte-companies/report?format=xlsx\|pdf&location=` | Admin: downloadable HTE placement report |
+| GET | `/api/admin/archive/status` | Admin: active academic year, next year, already archived? |
+| POST | `/api/admin/archive/academic-year` | Admin: `{ email, password }` — archive the active year's HTE Directory and make the next year active |
+| GET | `/api/admin/archive/hte-snapshots[/:year?format=xlsx\|pdf]` | Admin: archived HTE Directory records |
 | GET | `/api/notifications` | Notification feed |
 | PATCH | `/api/notifications/:id/read` | Mark one read |
 | PATCH | `/api/notifications/read-all` | Mark all read |
 | DELETE | `/api/notifications/:id` | Delete a notification |
 | GET | `/api/profile` | Full student profile |
 | PATCH | `/api/profile` | Update phone/address/etc. |
-| POST | `/api/profile/company` | Confirm Company Details (+ location + start date) |
+| POST | `/api/profile/company` | Confirm Company Details (one-time; 409 if already entered) |
 | POST | `/api/profile/avatar` | Upload avatar image |
 
 ---
 
-## 7. What's Not Built Yet
+## 7. Known Gaps
 
-- **Instructor module** — the review/approve side of Requirements docs,
-  Correction Requests, and Weekly Reports (`remarks`/status fields already
-  exist and are wired up on the student side, ready for this).
-- **Admin module** — company assignment, master list management, reports.
-  Flutter Web is the intended stack for this so it can share code with the
-  mobile apps.
-- **Real file picking** — uploads currently use a mock file picker sheet
-  (returns a fake filename) since `file_picker`/`image_picker` aren't
-  wired up; the server already accepts real multipart files where it
-  matters (requirement docs, avatars), so swapping this in is additive.
+- **Official Requirements list (System Revisions item 7)** — waiting for the
+  panel's corrected list; the Admin can enter it in *Official Requirements*.
+- **Retired server routes** — the old clock in/out endpoints
+  (`/api/attendance/*` except `/progress`, `/api/teacher/attendance`) and
+  the old Class Management import/export routes are still mounted, but the
+  app no longer calls them.
 - **Push/real-time notifications** — the feed is pull-based (fetched on
   load), no WebSocket/push infrastructure yet.

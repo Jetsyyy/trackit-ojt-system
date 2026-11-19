@@ -2,27 +2,17 @@ import 'package:flutter/material.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/common/app_header.dart';
 
-/// The Document (OJT Management) tab's hub -- Attendance (Records |
-/// Requests) and Documents (Official Requirements, Weekly AR
-/// Submissions, Additional Requirement) sections, matching the mockup.
+/// The Document (OJT Management) tab's hub -- weekly DTR & AR review and
+/// Official Requirements review. The requirement list and its template
+/// files are managed by the Admin (System Revisions item 15).
 class TeacherDocumentsHubScreen extends StatelessWidget {
-  final VoidCallback onOpenAttendanceRecords;
-  final VoidCallback onOpenAttendanceRequests;
   final VoidCallback onOpenOfficialRequirements;
   final VoidCallback onOpenWeeklyReports;
-  final VoidCallback onOpenAdditionalRequirements;
-  final VoidCallback onAddNewRequirement;
-  final VoidCallback onOpenOfficialTemplates;
 
   const TeacherDocumentsHubScreen({
     super.key,
-    required this.onOpenAttendanceRecords,
-    required this.onOpenAttendanceRequests,
     required this.onOpenOfficialRequirements,
     required this.onOpenWeeklyReports,
-    required this.onOpenAdditionalRequirements,
-    required this.onAddNewRequirement,
-    required this.onOpenOfficialTemplates,
   });
 
   @override
@@ -43,22 +33,15 @@ class TeacherDocumentsHubScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _SectionLabel('Attendance'),
+                  const _SectionLabel('OJT Hours'),
                   const SizedBox(height: 10),
                   _HubCard(
                     children: [
                       _HubTile(
                         icon: Icons.fact_check_outlined,
-                        title: 'Records',
-                        subtitle: 'Full clock-in/out log across all students',
-                        onTap: onOpenAttendanceRecords,
-                      ),
-                      const Divider(height: 1),
-                      _HubTile(
-                        icon: Icons.rule_folder_outlined,
-                        title: 'Requests',
-                        subtitle: 'Correction requests -- approve or reject',
-                        onTap: onOpenAttendanceRequests,
+                        title: 'Weekly DTR & AR Review',
+                        subtitle: 'Approve weekly hours or return with remarks',
+                        onTap: onOpenWeeklyReports,
                       ),
                     ],
                   ),
@@ -70,48 +53,10 @@ class TeacherDocumentsHubScreen extends StatelessWidget {
                       _HubTile(
                         icon: Icons.folder_shared_outlined,
                         title: 'Official Requirements',
-                        subtitle: 'Submission list, review by student',
+                        subtitle: 'Review submissions by student',
                         onTap: onOpenOfficialRequirements,
                       ),
-                      const Divider(height: 1),
-                      _HubTile(
-                        icon: Icons.description_outlined,
-                        title: 'Requirement Templates',
-                        subtitle: 'Upload/replace official form templates',
-                        onTap: onOpenOfficialTemplates,
-                      ),
-                      const Divider(height: 1),
-                      _HubTile(
-                        icon: Icons.summarize_outlined,
-                        title: 'Weekly AR Submissions',
-                        subtitle: 'Record / compilation only',
-                        onTap: onOpenWeeklyReports,
-                      ),
-                      const Divider(height: 1),
-                      _HubTile(
-                        icon: Icons.playlist_add_check_outlined,
-                        title: 'Additional Requirement',
-                        subtitle: 'Instructor-created requirements',
-                        onTap: onOpenAdditionalRequirements,
-                      ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onAddNewRequirement,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add New Requirement'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primaryMaroon,
-                        side: const BorderSide(color: AppColors.primaryMaroon),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
                   ),
                 ],
               ),

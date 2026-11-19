@@ -8,17 +8,15 @@ class TeacherHelpCenterScreen extends StatelessWidget {
 
   static const _faqs = [
     (
-      'How do I create a class?',
-      'Go to the Students tab. If you have no class yet, you\'ll see a '
-          '"Create Your Class" form -- fill in Program, Section, and '
-          'Academic Year to get a real activation code.',
+      'How do I get my section?',
+      'The Admin assigns your section when approving your account. It '
+          'then appears in the Students tab with its student code.',
     ),
     (
-      'How do students join my class?',
-      'Share your Class Activation Code (Students tab > Class Information '
-          '> Copy) or the invitation message. Students enter it when they '
-          'register, which links them to you and your section '
-          'automatically.',
+      'How do students join my section?',
+      'Share your section\'s code (Students tab > Class Information > '
+          'Copy). Students enter it when they register, then wait for you '
+          'to approve them in Students > Registration Requests.',
     ),
     (
       'How do I post an announcement?',
@@ -29,15 +27,22 @@ class TeacherHelpCenterScreen extends StatelessWidget {
     (
       'What shows up in my Notifications?',
       'Real activity from your assigned students: new students joining '
-          'your class, requirement submissions, weekly report '
-          'submissions, and attendance correction requests.',
+          'your class, requirement submissions, and weekly DTR & AR '
+          'submissions.',
+    ),
+    (
+      'How do I credit a student\'s OJT hours?',
+      'Document > Weekly DTR & AR Review. Open a student, check that week\'s '
+          'DTR and Accomplishment Report, then Approve (the claimed hours '
+          'are added to their credited total) or Return it with remarks so '
+          'they can fix and resubmit.',
     ),
     (
       'What do the OJT Stage labels mean?',
-      'Preparing: company confirmed but attendance not started yet. '
-          'Active: currently logging OJT hours. Completed: hit their '
-          'required hours. On Track/Behind/Needs Attention/Ahead of '
-          'Schedule (the colored badge) reflects pace, not stage.',
+      'Preparing: company confirmed but no week approved yet. '
+          'Active: has approved weekly hours. Completed: approved hours '
+          'reached the required total. On Track/Behind/Needs Attention/Ahead '
+          'of Schedule (the colored badge) reflects pace, not stage.',
     ),
   ];
 

@@ -3,7 +3,14 @@ const path = require('path');
 // server/ itself -- dotenv's default lookup is relative to the current
 // working directory, which breaks when you `cd server && npm start`.
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Return DATE columns (OID 1082: ojt_start_date, week_end_date,
+// date_hired, ...) as their plain 'YYYY-MM-DD' text. By default
+// node-postgres turns them into a JS Date at LOCAL midnight, which
+// serializes to JSON as e.g. 2026-11-18T16:00:00Z for Nov 19 in Manila --
+// so the app showed every calendar date one day early.
+types.setTypeParser(1082, (value) => value);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

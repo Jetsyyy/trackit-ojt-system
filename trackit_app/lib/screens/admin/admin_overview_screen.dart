@@ -159,7 +159,7 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
                   ),
                 )
               else
-                _buildDashboard(_overview!, isWide),
+                _buildDashboard(_overview!),
             ],
           ),
         );
@@ -211,23 +211,20 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
     );
   }
 
-  Widget _buildDashboard(AdminOverview overview, bool isWide) {
+  Widget _buildDashboard(AdminOverview overview) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildStatCards(overview, isWide),
+        _buildStatCards(overview),
         const SizedBox(height: 16),
-        _buildCharts(overview, isWide),
+        _buildCharts(overview),
         const SizedBox(height: 16),
-        _buildBottomRow(overview, isWide),
+        _buildBottomRow(overview),
       ],
     );
   }
 
-  Widget _buildStatCards(AdminOverview overview, bool isWide) {
-    final attendancePct = overview.totalStudents > 0
-        ? (overview.clockedInToday / overview.totalStudents * 100)
-        : 0.0;
+  Widget _buildStatCards(AdminOverview overview) {
     final completedPct = overview.totalStudents > 0
         ? (overview.completedCount / overview.totalStudents * 100)
         : 0.0;
@@ -249,13 +246,14 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
         subtitle: 'Handling OJT students',
       ),
       _StatCard(
-        icon: Icons.check_circle_outline,
-        iconBg: AppColors.successGreenBg,
-        iconColor: AppColors.successGreenText,
-        label: 'Clocked In Today',
-        value: '${overview.clockedInToday} / ${overview.totalStudents}',
-        subtitle: '${attendancePct.toStringAsFixed(1)}% clocked in',
-        subtitleColor: AppColors.successGreenText,
+        icon: Icons.fact_check_outlined,
+        iconBg: AppColors.statBlueBg,
+        iconColor: AppColors.statBlueIcon,
+        label: 'Weekly DTR & AR to Review',
+        value: '${overview.weeksAwaitingReview}',
+        subtitle: overview.studentsAwaitingReview == 0
+            ? 'Nothing waiting for instructors'
+            : 'From ${overview.studentsAwaitingReview} student${overview.studentsAwaitingReview == 1 ? '' : 's'}',
       ),
       _StatCard(
         icon: Icons.emoji_events_outlined,
@@ -267,34 +265,22 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
       ),
     ];
 
-    if (isWide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < cards.length; i++) ...[
-            if (i > 0) const SizedBox(width: 14),
-            Expanded(child: cards[i]),
-          ],
-        ],
-      );
-    }
-    return Wrap(
-      spacing: 14,
-      runSpacing: 14,
-      children: [for (final c in cards) SizedBox(width: 260, child: c)],
-    );
+    return _ResponsiveGrid(minItemWidth: 220, children: cards);
   }
 
-  Widget _buildCharts(AdminOverview overview, bool isWide) {
-    final attendanceCard = _ChartCard(
-      title: "TODAY'S ATTENDANCE OVERVIEW",
+  Widget _buildCharts(AdminOverview overview) {
+    final noRecent = overview.weeklyList
+        .where((e) => e.status == AdminOverviewWeeklyStatus.noRecent)
+        .length;
+    final weeklyCard = _ChartCard(
+      title: 'WEEKLY DTR & AR SUBMISSIONS',
       chart: DonutChart(
-        centerLabel: '${overview.clockedInToday}',
-        centerSubLabel: 'Clocked In Today\n/${overview.totalStudents}',
+        centerLabel: '${overview.weeksApproved + overview.weeksAwaitingReview + overview.weeksReturned}',
+        centerSubLabel: 'Weeks Submitted',
         segments: [
-          DonutSegment(label: 'Clocked In', value: overview.clockedInToday, color: AppColors.successGreenText),
-          DonutSegment(label: 'Not Yet Clocked In', value: overview.notYetClockedInToday, color: AppColors.statOrangeIcon),
-          DonutSegment(label: 'Late / Missed', value: overview.lateMissedToday, color: AppColors.statRedIcon),
+          DonutSegment(label: 'Approved', value: overview.weeksApproved, color: AppColors.successGreenText),
+          DonutSegment(label: 'Awaiting Review', value: overview.weeksAwaitingReview, color: AppColors.statBlueIcon),
+          DonutSegment(label: 'Returned', value: overview.weeksReturned, color: AppColors.statOrangeIcon),
         ],
       ),
       footer: overview.totalStudents == 0
@@ -305,28 +291,25 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AppColors.successGreenBg,
+                      color: noRecent == 0 ? AppColors.successGreenBg : AppColors.statRedBg,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      overview.clockedInToday == overview.totalStudents
-                          ? 'Great job! Everyone has clocked in today.'
-                          : '${overview.notYetClockedInToday + overview.lateMissedToday} student'
-                                '${(overview.notYetClockedInToday + overview.lateMissedToday) == 1 ? '' : 's'} '
-                                'still need${(overview.notYetClockedInToday + overview.lateMissedToday) == 1 ? 's' : ''} to clock in.',
-                      style: const TextStyle(fontSize: 11.5, color: AppColors.successGreenText, fontWeight: FontWeight.w600),
+                      noRecent == 0
+                          ? 'Every active student has a recent DTR & AR.'
+                          : '$noRecent student${noRecent == 1 ? ' has' : 's have'} no DTR & AR in the last 2 weeks.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: noRecent == 0 ? AppColors.successGreenText : AppColors.statRedIcon,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
-      buttonLabel: 'View Attendance List',
-      onPressed: () => _push(
-        AdminOverviewAttendanceListScreen(
-          entries: overview.attendanceList,
-          lateClockInHourPht: overview.lateClockInHourPht,
-        ),
-      ),
+      buttonLabel: 'View Weekly List',
+      onPressed: () => _push(AdminOverviewWeeklyListScreen(entries: overview.weeklyList)),
     );
 
     final completionCard = _ChartCard(
@@ -344,40 +327,55 @@ class _AdminOverviewScreenState extends State<AdminOverviewScreen> {
       onPressed: () => _push(AdminOverviewStudentListScreen(students: overview.studentList)),
     );
 
-    if (isWide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: attendanceCard),
-          const SizedBox(width: 14),
-          Expanded(child: completionCard),
-        ],
-      );
-    }
-    return Column(
-      children: [attendanceCard, const SizedBox(height: 14), completionCard],
-    );
+    return _ResponsiveGrid(minItemWidth: 340, children: [weeklyCard, completionCard]);
   }
 
-  Widget _buildBottomRow(AdminOverview overview, bool isWide) {
+  Widget _buildBottomRow(AdminOverview overview) {
     final tasksCard = _PendingTasksCard(overview: overview, onViewAll: () => _push(AdminOverviewTasksScreen(overview: overview)));
     final hoursCard = _HoursCard(overview: overview, onViewSummary: () => _push(AdminOverviewHoursSummaryScreen(overview: overview)));
     final atRiskCard = _AtRiskCard(overview: overview, onViewAll: () => _push(AdminOverviewAtRiskScreen(overview: overview)));
 
-    if (isWide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: tasksCard),
-          const SizedBox(width: 14),
-          Expanded(child: hoursCard),
-          const SizedBox(width: 14),
-          Expanded(child: atRiskCard),
-        ],
-      );
-    }
-    return Column(
-      children: [tasksCard, const SizedBox(height: 14), hoursCard, const SizedBox(height: 14), atRiskCard],
+    return _ResponsiveGrid(minItemWidth: 260, children: [tasksCard, hoursCard, atRiskCard]);
+  }
+}
+
+/// Replaces the old isWide-branching Row(Expanded...)/Wrap(fixedWidth...)
+/// split used for the stat cards, charts, and bottom row -- a single
+/// LayoutBuilder that computes how many equal-width columns fit (down to
+/// 1) and hands every child an explicit, finite width via SizedBox. No
+/// Expanded/Flexible involved at all, so there's no dependency on the
+/// ambient Row/Column's flex behavior or on getting a breakpoint number
+/// exactly right; it also naturally gives every card section its own
+/// reasonable tablet-width column count instead of just two hard states.
+class _ResponsiveGrid extends StatelessWidget {
+  final List<Widget> children;
+  final double minItemWidth;
+  final double spacing;
+
+  const _ResponsiveGrid({
+    required this.children,
+    required this.minItemWidth,
+    this.spacing = 14,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = ((width + spacing) / (minItemWidth + spacing))
+            .floor()
+            .clamp(1, children.length);
+        final itemWidth = (width - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final child in children) SizedBox(width: itemWidth, child: child),
+          ],
+        );
+      },
     );
   }
 }
@@ -389,7 +387,6 @@ class _StatCard extends StatelessWidget {
   final String label;
   final String value;
   final String subtitle;
-  final Color? subtitleColor;
 
   const _StatCard({
     required this.icon,
@@ -398,7 +395,6 @@ class _StatCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.subtitle,
-    this.subtitleColor,
   });
 
   @override
@@ -425,7 +421,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
           const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(fontSize: 11, color: subtitleColor ?? AppColors.textSecondary)),
+          Text(subtitle, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
         ],
       ),
     );
@@ -508,18 +504,6 @@ class _PendingTasksCard extends StatelessWidget {
         label: 'Documents awaiting review / validation',
         subtitle: 'Uploaded by students',
         count: overview.documentsAwaitingReview.length,
-      ),
-      (
-        icon: Icons.apartment_outlined,
-        label: 'Company requests for verification',
-        subtitle: 'For evaluation',
-        count: overview.companyVerification.length,
-      ),
-      (
-        icon: Icons.edit_note_outlined,
-        label: 'Attendance correction requests',
-        subtitle: 'For review',
-        count: overview.correctionRequests.length,
       ),
     ];
 
@@ -685,7 +669,7 @@ class _AtRiskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       ('Below 50% of required hours', overview.belowHalfHours.length),
-      ('No attendance this week', overview.noAttendanceThisWeek.length),
+      ('No DTR & AR in the last 2 weeks', overview.noRecentSubmission.length),
       ('Behind schedule (based on days elapsed)', overview.behindSchedule.length),
     ];
     final totalAtRisk = overview.atRiskUnion.length;

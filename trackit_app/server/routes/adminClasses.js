@@ -6,6 +6,7 @@ const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const { generateUniqueCode } = require('../utils/activationCode');
 const { toCsv } = require('../utils/csv');
+const { getCreditedHours } = require('../utils/creditedHours');
 const { parseCsvRecords } = require('../utils/csvParse');
 const { parseXlsxRecords } = require('../utils/xlsxParse');
 const {
@@ -76,7 +77,9 @@ router.get('/', async (req, res) => {
         program: row.program,
         section: row.section,
         academicYear: row.academic_year,
+        instructorId: row.instructor_id != null ? Number(row.instructor_id) : null,
         instructorName: row.instructor_name,
+        activationCode: row.activation_code,
         studentCount: Number(row.student_count),
       })),
     });
@@ -100,14 +103,17 @@ router.get('/academic-years', async (req, res) => {
        GROUP BY academic_year
        ORDER BY academic_year DESC`,
     );
-    res.json({
-      success: true,
-      academicYears: result.rows.map((row) => ({
-        year: row.academic_year,
-        classCount: Number(row.class_count),
-        isCurrent: row.academic_year === currentYear,
-      })),
-    });
+    const academicYears = result.rows.map((row) => ({
+      year: row.academic_year,
+      classCount: Number(row.class_count),
+      isCurrent: row.academic_year === currentYear,
+    }));
+    // After archiving, the new active year has no sections yet but must
+    // still be selectable.
+    if (currentYear && !academicYears.some((y) => y.year === currentYear)) {
+      academicYears.unshift({ year: currentYear, classCount: 0, isCurrent: true });
+    }
+    res.json({ success: true, currentAcademicYear: currentYear, academicYears });
   } catch (error) {
     console.error('Get admin academic years error:', error);
     res.status(500).json({ success: false, message: 'Failed to load academic years.' });
@@ -461,23 +467,7 @@ router.get('/:id/students/:studentId', async (req, res) => {
     }
     const detail = detailResult.rows[0];
 
-    const [hoursResult, weeklyResult] = await Promise.all([
-      pool.query(
-        `SELECT
-           COUNT(*) FILTER (WHERE clock_out IS NOT NULL) AS days_attended,
-           COALESCE(SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600.0)
-             FILTER (WHERE clock_out IS NOT NULL), 0) AS completed_hours
-         FROM attendance_records WHERE student_id = $1`,
-        [studentId],
-      ),
-      pool.query(
-        `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600.0), 0) AS weekly_hours
-         FROM attendance_records
-         WHERE student_id = $1 AND clock_out IS NOT NULL
-           AND work_date >= (CURRENT_DATE - INTERVAL '7 days')`,
-        [studentId],
-      ),
-    ]);
+    const hours = await getCreditedHours(studentId);
 
     res.json({
       success: true,
@@ -506,10 +496,14 @@ router.get('/:id/students/:studentId', async (req, res) => {
             }
           : null,
         progress: {
-          completedHours: Number(hoursResult.rows[0].completed_hours),
+          completedHours: hours.completedHours,
           requiredHours: Number(detail.required_hours),
-          daysAttended: Number(hoursResult.rows[0].days_attended),
-          weeklyAverageHours: Number(weeklyResult.rows[0].weekly_hours),
+          pendingHours: hours.pendingHours,
+          approvedWeeks: hours.approvedWeeks,
+          // Kept for the current app build; now counts approved weeks.
+          daysAttended: hours.approvedWeeks,
+          weeklyAverageHours:
+            hours.approvedWeeks > 0 ? hours.completedHours / hours.approvedWeeks : 0,
         },
       },
     });
@@ -522,6 +516,52 @@ router.get('/:id/students/:studentId', async (req, res) => {
 // Admin generates/regenerates the code -- per the spec, this replaces
 // the instructor's own class-creation code generation as the real
 // source of activation codes going forward.
+// Assign a section to an approved instructor, or unassign it with
+// { instructorId: null }. Students already in the section move with it:
+// their adviser becomes the new instructor.
+router.patch('/:id/instructor', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const classId = Number(req.params.id);
+    const instructorId =
+      req.body.instructorId == null ? null : Number(req.body.instructorId);
+
+    if (instructorId != null) {
+      const instructor = await client.query(
+        `SELECT id FROM advisers WHERE id = $1 AND approval_status = 'approved' AND status = 'active'`,
+        [instructorId],
+      );
+      if (instructor.rows.length === 0) {
+        return res
+          .status(400)
+          .json({ success: false, message: 'Pick an approved, active instructor.' });
+      }
+    }
+
+    await client.query('BEGIN');
+    const updated = await client.query(
+      'UPDATE instructor_classes SET instructor_id = $1 WHERE id = $2 RETURNING id',
+      [instructorId, classId],
+    );
+    if (updated.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+    await client.query(
+      'UPDATE student_profiles SET adviser_id = $1, updated_at = now() WHERE class_id = $2',
+      [instructorId, classId],
+    );
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Assign section instructor error:', error);
+    res.status(500).json({ success: false, message: 'Failed to assign the instructor.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.patch('/:id/regenerate-code', async (req, res) => {
   try {
     const classId = Number(req.params.id);

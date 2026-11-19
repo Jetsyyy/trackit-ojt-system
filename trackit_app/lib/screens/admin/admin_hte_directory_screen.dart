@@ -5,6 +5,7 @@ import '../../models/hte_company_contact.dart';
 import '../../services/admin_hte_companies_service.dart';
 import '../../services/api_client.dart';
 import '../../utils/app_colors.dart';
+import '../../utils/file_download.dart';
 import '../../widgets/admin/admin_pagination.dart';
 import '../../widgets/common/empty_state_view.dart';
 import '../../widgets/common/skeleton_list_tile.dart';
@@ -79,14 +80,48 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
   }
 
   List<HteCompany> get _filtered {
+    final q = _query.toLowerCase();
     return _companies.where((c) {
-      final matchesQuery = _query.isEmpty ||
-          c.name.toLowerCase().contains(_query.toLowerCase()) ||
-          c.industry.toLowerCase().contains(_query.toLowerCase());
+      final matchesQuery = q.isEmpty ||
+          c.name.toLowerCase().contains(q) ||
+          c.industry.toLowerCase().contains(q) ||
+          c.students.any((s) => s.name.toLowerCase().contains(q));
       final matchesIndustry = _industryFilter == null || c.industry == _industryFilter;
-      final matchesLocation = _locationFilter == null || c.location == _locationFilter;
+      // A location filter is either a region ("Metro Manila") or a city.
+      final matchesLocation = _locationFilter == null ||
+          c.location == _locationFilter ||
+          c.region == _locationFilter;
       return matchesQuery && matchesIndustry && matchesLocation;
     }).toList();
+  }
+
+  List<String> get _regions =>
+      (_companies.map((c) => c.region).where((r) => r.isNotEmpty).toSet().toList()..sort());
+
+  Future<void> _downloadReport(String format) async {
+    try {
+      final file = await _service.downloadReport(format: format, location: _locationFilter);
+      final saved = downloadBytes(
+        filename: file.filename ?? 'HTE-Report.$format',
+        bytes: file.bytes,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(saved
+              ? 'Report downloaded${_locationFilter != null ? ' for $_locationFilter' : ''}.'
+              : 'Downloads are only available in the web app.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is ApiException ? e.message : 'Could not generate the report.'),
+          backgroundColor: AppColors.statRedIcon,
+        ),
+      );
+    }
   }
 
   List<HteCompany> _pageItems(List<HteCompany> filtered) {
@@ -193,10 +228,16 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
                     initialValue: _locationFilter,
-                    decoration: const InputDecoration(labelText: 'Location'),
+                    decoration: const InputDecoration(
+                      labelText: 'Location',
+                      helperText: 'Pick a region (e.g. Metro Manila) or a city. Reports use this too.',
+                    ),
                     items: [
-                      const DropdownMenuItem(value: null, child: Text('All')),
-                      for (final l in _locations) DropdownMenuItem(value: l, child: Text(l)),
+                      const DropdownMenuItem(value: null, child: Text('All locations')),
+                      for (final r in _regions)
+                        DropdownMenuItem(value: r, child: Text('$r (region)')),
+                      for (final l in _locations..sort())
+                        if (!_regions.contains(l)) DropdownMenuItem(value: l, child: Text(l)),
                     ],
                     onChanged: (value) {
                       setSheetState(() => _locationFilter = value);
@@ -258,7 +299,7 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
         ),
         const SizedBox(height: 2),
         const Text(
-          "Browse and manage the University's official list of partner companies for OJT.",
+          'Partner companies and the students placed at each this academic year.',
           style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
         ),
       ],
@@ -274,15 +315,53 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
       label: const Text('Add HTE/Company'),
     );
 
+    // Items 18 and 22: the report follows the current location filter.
+    final reportButton = PopupMenuButton<String>(
+      tooltip: 'Download a report of the directory and its students',
+      onSelected: _downloadReport,
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'xlsx',
+          child: Text('Excel (.xlsx)${_locationFilter != null ? ' – $_locationFilter' : ''}'),
+        ),
+        PopupMenuItem(
+          value: 'pdf',
+          child: Text('PDF${_locationFilter != null ? ' – $_locationFilter' : ''}'),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.primaryMaroon),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download_outlined, size: 18, color: AppColors.primaryMaroon),
+            SizedBox(width: 6),
+            Text(
+              'Download Report',
+              style: TextStyle(color: AppColors.primaryMaroon, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+
     if (isWide) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [Expanded(child: titleBlock), addButton],
+        children: [Expanded(child: titleBlock), reportButton, const SizedBox(width: 10), addButton],
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [titleBlock, const SizedBox(height: 12), addButton],
+      children: [
+        titleBlock,
+        const SizedBox(height: 12),
+        Row(children: [reportButton, const SizedBox(width: 10), Expanded(child: addButton)]),
+      ],
     );
   }
 
@@ -342,7 +421,7 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                     _page = 0;
                   }),
                   decoration: InputDecoration(
-                    hintText: 'Search Company Name...',
+                    hintText: 'Search company or student...',
                     prefixIcon: const Icon(Icons.search, size: 20),
                     filled: true,
                     fillColor: AppColors.background,
@@ -405,8 +484,9 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
     );
   }
 
-  // Company Name (220) + Industry (180) + Location (140) + info icon (36).
-  static const double _tableWidth = 220 + 180 + 140 + 36;
+  // Company Name (200) + Industry (140) + Location (130) + Students (64) +
+  // info icon (30), so all columns fit beside the detail pane.
+  static const double _tableWidth = 200 + 140 + 130 + 64 + 30;
 
   Widget _buildTable(List<HteCompany> companies, {required bool narrow}) {
     return SingleChildScrollView(
@@ -424,27 +504,34 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
               child: const Row(
                 children: [
                   SizedBox(
-                    width: 220,
+                    width: 200,
                     child: Text(
                       'Company Name',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                     ),
                   ),
                   SizedBox(
-                    width: 180,
+                    width: 140,
                     child: Text(
                       'Industry',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                     ),
                   ),
                   SizedBox(
-                    width: 140,
+                    width: 130,
                     child: Text(
                       'Location',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                     ),
                   ),
-                  SizedBox(width: 36),
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      'Students',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                    ),
+                  ),
+                  SizedBox(width: 30),
                 ],
               ),
             ),
@@ -469,7 +556,7 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                         child: Row(
                           children: [
                             SizedBox(
-                              width: 220,
+                              width: 200,
                               child: Text(
                                 company.name,
                                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
@@ -478,7 +565,7 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 180,
+                              width: 140,
                               child: Text(
                                 company.industry,
                                 style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
@@ -487,14 +574,14 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 140,
+                              width: 130,
                               child: Row(
                                 children: [
                                   const Icon(Icons.location_on, size: 12, color: AppColors.textSecondary),
                                   const SizedBox(width: 3),
                                   Expanded(
                                     child: Text(
-                                      company.location,
+                                      company.location.isEmpty ? 'Not set' : company.location,
                                       style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -504,7 +591,20 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                               ),
                             ),
                             SizedBox(
-                              width: 36,
+                              width: 64,
+                              child: Text(
+                                '${company.students.length}',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: company.students.isEmpty
+                                      ? AppColors.textSecondary
+                                      : AppColors.primaryMaroon,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 30,
                               child: Icon(
                                 Icons.info_outline,
                                 size: 16,
@@ -593,12 +693,39 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
                 ),
               ],
             ),
+            if (company.addedByStudent) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.statOrangeBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'Added automatically from a student\'s company details. Edit it to add the '
+                  'location and contact persons; students see it in their directory once you do.',
+                  style: TextStyle(fontSize: 12, color: AppColors.statOrangeIcon),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             const Divider(height: 1, color: AppColors.background),
             const SizedBox(height: 12),
             _InfoRow(icon: Icons.category_outlined, label: 'Industry', value: company.industry),
+            _InfoRow(
+              icon: Icons.map_outlined,
+              label: 'Location',
+              value: company.location.isEmpty
+                  ? 'Not set'
+                  : '${company.location}${company.region.isNotEmpty && company.region != company.location ? ' (${company.region})' : ''}',
+            ),
             _InfoRow(icon: Icons.location_on_outlined, label: 'Address', value: company.address),
-            _InfoRow(icon: Icons.email_outlined, label: 'Email', value: company.email),
+            _InfoRow(
+              icon: Icons.email_outlined,
+              label: 'Email',
+              value: company.email.isEmpty ? 'Not provided' : company.email,
+            ),
             _InfoRow(icon: Icons.link, label: 'Website', value: company.website ?? 'Not provided'),
             _InfoRow(
               icon: Icons.verified_outlined,
@@ -622,6 +749,21 @@ class _AdminHteDirectoryScreenState extends State<AdminHteDirectoryScreen> {
               )
             else
               for (final contact in company.contacts) _ContactRow(contact: contact),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: AppColors.background),
+            const SizedBox(height: 12),
+            Text(
+              'Students Placed Here (${company.students.length})',
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.primaryMaroon),
+            ),
+            const SizedBox(height: 8),
+            if (company.students.isEmpty)
+              const Text(
+                'No students placed here this academic year.',
+                style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+              )
+            else
+              for (final student in company.students) _PlacementRow(student: student),
           ],
         ),
       ),
@@ -687,6 +829,76 @@ class _ContactRow extends StatelessWidget {
             contact.phone,
             style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlacementRow extends StatelessWidget {
+  final HtePlacement student;
+
+  const _PlacementRow({required this.student});
+
+  String _hours(double h) => h == h.roundToDouble() ? h.toInt().toString() : h.toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = student.requiredHours > 0
+        ? (student.completedHours / student.requiredHours).clamp(0.0, 1.0)
+        : 0.0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.school_outlined, size: 15, color: AppColors.primaryMaroon),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  student.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+              ),
+              Text(
+                '${student.program} - ${student.section}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 25, top: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      minHeight: 5,
+                      backgroundColor: AppColors.background,
+                      valueColor: const AlwaysStoppedAnimation(AppColors.primaryMaroon),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_hours(student.completedHours)} / ${_hours(student.requiredHours)} hrs',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if ((student.supervisor ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 25, top: 2),
+              child: Text(
+                'Supervisor: ${student.supervisor}',
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ),
         ],
       ),
     );

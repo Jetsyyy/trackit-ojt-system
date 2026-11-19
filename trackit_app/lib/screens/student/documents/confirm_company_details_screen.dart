@@ -1,17 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../models/company_details.dart';
+import '../../../services/api_client.dart';
 import '../../../services/student_profile_service.dart';
 import '../../../utils/app_colors.dart';
-import '../../../utils/location_helper.dart';
 import '../../../widgets/common/back_nav_header.dart';
 import '../../../widgets/common/info_reminder_card.dart';
 
-/// Manual-entry form for the student's OJT company, shown once all
-/// Startup Requirements phases are complete. This is intentionally
-/// self-reported (not auto-extracted from uploaded documents) so students
-/// can correct any AI/OCR misreads, and becomes the source of truth for
-/// the Home/Profile company card -- independent of the HTE Directory.
+/// The student's OJT company, shown once all Startup Requirements phases
+/// are complete. It is the source of truth for the Home/Profile company
+/// card and is reflected as entered -- no Admin approval (System
+/// Revisions item 21).
+///
+/// - First visit: the full form. The company name suggests matching
+///   companies already saved in the system (item 8). It is a one-time
+///   entry (item 4), so submitting asks for confirmation.
+/// - After that: company details are view-only, but the supervisor's name
+///   and contact number can still be updated (item 5).
 class ConfirmCompanyDetailsScreen extends StatefulWidget {
   final StudentProfileService service;
   final CompanyDetails? existingDetails;
@@ -35,11 +42,11 @@ class _ConfirmCompanyDetailsScreenState
   late final TextEditingController _industryController;
   late final TextEditingController _supervisorController;
   late final TextEditingController _contactController;
+  final FocusNode _nameFocus = FocusNode();
   bool _saving = false;
-  bool _capturingLocation = false;
-  double? _latitude;
-  double? _longitude;
   late DateTime _ojtStartDate;
+
+  bool get _locked => widget.existingDetails != null;
 
   @override
   void initState() {
@@ -47,17 +54,13 @@ class _ConfirmCompanyDetailsScreenState
     final existing = widget.existingDetails;
     _nameController = TextEditingController(text: existing?.name ?? '');
     _addressController = TextEditingController(text: existing?.address ?? '');
-    _industryController = TextEditingController(
-      text: existing?.industry ?? '',
-    );
+    _industryController = TextEditingController(text: existing?.industry ?? '');
     _supervisorController = TextEditingController(
       text: existing?.supervisorName ?? '',
     );
     _contactController = TextEditingController(
       text: existing?.contactNumber ?? '',
     );
-    _latitude = existing?.latitude;
-    _longitude = existing?.longitude;
     _ojtStartDate = existing?.ojtStartDate ?? DateTime.now();
   }
 
@@ -68,37 +71,14 @@ class _ConfirmCompanyDetailsScreenState
     _industryController.dispose();
     _supervisorController.dispose();
     _contactController.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _captureLocation() async {
-    setState(() => _capturingLocation = true);
-    try {
-      final position = await getCurrentPosition();
-      if (!mounted) return;
-      setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Location captured. Save to apply it as your Attendance geofence.',
-          ),
-          backgroundColor: AppColors.successGreenText,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      final message = e is LocationException
-          ? e.message
-          : 'Could not get your location. Please try again.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: AppColors.statRedIcon),
-      );
-    } finally {
-      if (mounted) setState(() => _capturingLocation = false);
-    }
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.statRedIcon),
+    );
   }
 
   Future<void> _pickStartDate() async {
@@ -111,130 +91,222 @@ class _ConfirmCompanyDetailsScreenState
     if (picked != null) setState(() => _ojtStartDate = picked);
   }
 
+  /// Waits briefly so typing doesn't fire a request per keystroke, then
+  /// skips the request if the text changed in the meantime.
+  Future<Iterable<CompanySuggestion>> _suggest(TextEditingValue value) async {
+    final query = value.text.trim();
+    if (query.length < 2) return const [];
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (_nameController.text.trim() != query) return const [];
+    try {
+      return await widget.service.suggestCompanies(query);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _applySuggestion(CompanySuggestion suggestion) {
+    _nameController.text = suggestion.name;
+    if ((suggestion.address ?? '').isNotEmpty) {
+      _addressController.text = suggestion.address!;
+    }
+    if ((suggestion.industry ?? '').isNotEmpty) {
+      _industryController.text = suggestion.industry!;
+    }
+    setState(() {});
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fix the highlighted fields before continuing.'),
-          backgroundColor: AppColors.statRedIcon,
-        ),
-      );
+      _showError('Please fix the highlighted fields before continuing.');
       return;
     }
-    setState(() => _saving = true);
-    final details = CompanyDetails(
-      name: _nameController.text.trim(),
-      address: _addressController.text.trim(),
-      industry: _industryController.text.trim(),
-      supervisorName: _supervisorController.text.trim(),
-      contactNumber: _contactController.text.trim(),
-      latitude: _latitude,
-      longitude: _longitude,
-      ojtStartDate: _ojtStartDate,
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit company details?'),
+        content: Text(
+          'Company: ${_nameController.text.trim()}\n'
+          'OJT start: ${DateFormat('MMM d, yyyy').format(_ojtStartDate)}\n\n'
+          'Company information can only be entered once and can\'t be edited '
+          'afterwards. You can still update your supervisor later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Review'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryMaroon,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
     );
-    await widget.service.submitCompanyDetails(details);
-    if (!mounted) return;
-    setState(() => _saving = false);
-    Navigator.of(context).pop('Company details confirmed.');
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      await widget.service.submitCompanyDetails(
+        CompanyDetails(
+          name: _nameController.text.trim(),
+          address: _addressController.text.trim(),
+          industry: _industryController.text.trim(),
+          supervisorName: _supervisorController.text.trim(),
+          contactNumber: _contactController.text.trim(),
+          ojtStartDate: _ojtStartDate,
+        ),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop('Company details submitted.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _showError(
+        e is ApiException ? e.message : 'Could not save. Please try again.',
+      );
+    }
   }
+
+  Future<void> _updateSupervisor() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await widget.service.updateSupervisor(
+        supervisorName: _supervisorController.text.trim(),
+        contactNumber: _contactController.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop('Supervisor updated.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _showError(
+        e is ApiException ? e.message : 'Could not save. Please try again.',
+      );
+    }
+  }
+
+  String? _required(String? v, String label) =>
+      (v == null || v.trim().isEmpty) ? '$label is required' : null;
 
   @override
   Widget build(BuildContext context) {
+    final locked = _locked;
     return SafeArea(
       top: false,
       bottom: false,
       child: Column(
         children: [
-          const BackNavHeader(subtitle: 'Confirm Company Details'),
+          BackNavHeader(
+            subtitle: locked ? 'Company Details' : 'Confirm Company Details',
+          ),
           Expanded(
             child: Form(
               key: _formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
+              // Per-field (not form-wide) so typing in one field doesn't flag
+              // every untouched field as missing.
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  const InfoReminderCard(
-                    message:
-                        'Enter your company details manually so you can '
-                        'correct any misreads from your uploaded documents. '
-                        'This will appear on your Home and Profile pages.',
+                  InfoReminderCard(
+                    message: locked
+                        ? 'Your company information is final and can no longer be '
+                              'edited. If your supervisor changes, update them below.'
+                        : 'Start typing your company name to pick it from companies '
+                              'already in the system. Company information can only be '
+                              'entered once.',
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Company Name',
+                  const _SectionLabel('Company'),
+                  if (locked)
+                    _ReadOnlyField(
+                      label: 'Company Name',
+                      value: _nameController.text,
+                    )
+                  else
+                    _companyNameField(),
+                  const SizedBox(height: 12),
+                  if (locked)
+                    _ReadOnlyField(
+                      label: 'Company Address',
+                      value: _addressController.text,
+                    )
+                  else
+                    TextFormField(
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      controller: _addressController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Company Address',
+                      ),
+                      validator: (v) => _required(v, 'Address'),
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Company name is required'
-                        : null,
-                  ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _addressController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Company Address',
+                  if (locked)
+                    _ReadOnlyField(
+                      label: 'Industry',
+                      value: _industryController.text,
+                    )
+                  else
+                    TextFormField(
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      controller: _industryController,
+                      decoration: const InputDecoration(labelText: 'Industry'),
+                      validator: (v) => _required(v, 'Industry'),
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Address is required'
-                        : null,
-                  ),
                   const SizedBox(height: 12),
+                  if (locked)
+                    _ReadOnlyField(
+                      label: 'OJT Start Date',
+                      value: DateFormat('MMM d, yyyy').format(_ojtStartDate),
+                    )
+                  else
+                    InkWell(
+                      onTap: _pickStartDate,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'OJT Start Date',
+                          helperText:
+                              'Your weekly DTR and AR submissions start from this date.',
+                        ),
+                        child: Text(
+                          DateFormat('MMM d, yyyy').format(_ojtStartDate),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+                  const _SectionLabel('Supervisor'),
                   TextFormField(
-                    controller: _industryController,
-                    decoration: const InputDecoration(labelText: 'Industry'),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Industry is required'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     controller: _supervisorController,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
                       labelText: 'Supervisor Name',
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Supervisor name is required'
-                        : null,
+                    validator: (v) => _required(v, 'Supervisor name'),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     controller: _contactController,
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(
                       labelText: 'Supervisor Contact Number',
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Contact number is required'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: _pickStartDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'OJT Start Date',
-                        helperText:
-                            'Used to track whether your attendance pace is '
-                            'on schedule.',
-                      ),
-                      child: Text(
-                        DateFormat('MMM d, yyyy').format(_ojtStartDate),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _LocationSection(
-                    hasLocation: _latitude != null && _longitude != null,
-                    capturing: _capturingLocation,
-                    onCapture: _capturingLocation ? null : _captureLocation,
+                    validator: (v) => _required(v, 'Contact number'),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _saving ? null : _submit,
+                      onPressed: _saving
+                          ? null
+                          : (locked ? _updateSupervisor : _submit),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryMaroon,
                         foregroundColor: Colors.white,
@@ -249,7 +321,11 @@ class _ConfirmCompanyDetailsScreenState
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Confirm Details'),
+                          : Text(
+                              locked
+                                  ? 'Update Supervisor'
+                                  : 'Submit Company Details',
+                            ),
                     ),
                   ),
                 ],
@@ -260,86 +336,117 @@ class _ConfirmCompanyDetailsScreenState
       ),
     );
   }
+
+  Widget _companyNameField() {
+    return RawAutocomplete<CompanySuggestion>(
+      textEditingController: _nameController,
+      focusNode: _nameFocus,
+      displayStringForOption: (option) => option.name,
+      optionsBuilder: _suggest,
+      onSelected: _applySuggestion,
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return TextFormField(
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          controller: controller,
+          focusNode: focusNode,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Company Name',
+            helperText: 'Pick a suggestion if your company is listed.',
+            suffixIcon: Icon(Icons.search),
+          ),
+          validator: (v) => _required(v, 'Company name'),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        // TextFieldTapRegion: tapping a suggestion must not count as a tap
+        // outside the field, or (on web) the field unfocuses and the list
+        // closes before the tap selects anything.
+        return TextFieldTapRegion(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 260,
+                  maxWidth: 480,
+                ),
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  children: [
+                    for (final option in options)
+                      ListTile(
+                        dense: true,
+                        leading: Icon(
+                          option.source == 'directory'
+                              ? Icons.verified_outlined
+                              : Icons.apartment_outlined,
+                          color: AppColors.primaryMaroon,
+                          size: 20,
+                        ),
+                        title: Text(option.name),
+                        subtitle: Text(
+                          [
+                            if ((option.address ?? '').isNotEmpty)
+                              option.address!,
+                            option.source == 'directory'
+                                ? 'HTE Directory'
+                                : 'Saved by other students',
+                          ].join(' Â· '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () => onSelected(option),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _LocationSection extends StatelessWidget {
-  final bool hasLocation;
-  final bool capturing;
-  final VoidCallback? onCapture;
+class _SectionLabel extends StatelessWidget {
+  final String text;
 
-  const _LocationSection({
-    required this.hasLocation,
-    required this.capturing,
-    required this.onCapture,
-  });
+  const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: hasLocation ? AppColors.successGreenBg : AppColors.statOrangeBg,
-        borderRadius: BorderRadius.circular(14),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          color: AppColors.textPrimary,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                hasLocation ? Icons.location_on : Icons.location_off_outlined,
-                size: 18,
-                color: hasLocation
-                    ? AppColors.successGreenText
-                    : AppColors.statOrangeIcon,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Attendance Location',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: hasLocation
-                      ? AppColors.successGreenText
-                      : AppColors.statOrangeIcon,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            hasLocation
-                ? 'Location set. This is where Clock In/Out will check you\'re '
-                    'within 100m of. Standing somewhere else? Tap below to update it.'
-                : 'While you\'re physically at your company, tap below to set '
-                    'this as your Attendance geofence. Clock In/Out won\'t work '
-                    'until this is set.',
-            style: TextStyle(
-              fontSize: 12,
-              color: hasLocation
-                  ? AppColors.successGreenText
-                  : AppColors.statOrangeIcon,
-            ),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: onCapture,
-            icon: capturing
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.my_location, size: 16),
-            label: Text(hasLocation ? 'Update My Location' : 'Set My Location'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryMaroon,
-              side: const BorderSide(color: AppColors.primaryMaroon),
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-        ],
+    );
+  }
+}
+
+class _ReadOnlyField extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReadOnlyField({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        enabled: false,
+        suffixIcon: const Icon(Icons.lock_outline, size: 18),
       ),
+      child: Text(value, style: const TextStyle(color: AppColors.textPrimary)),
     );
   }
 }

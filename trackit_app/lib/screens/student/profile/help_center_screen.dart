@@ -13,9 +13,11 @@ class HelpCenterScreen extends StatelessWidget {
           'the DCSE master list can activate an account.',
     ),
     (
-      'How does attendance tracking work?',
-      'Clock in and out from the Attendance tab. Your total OJT hours and '
-          'days attended update automatically from your clock-in records.',
+      'How are my OJT hours counted?',
+      'Every week, open the Weekly tab and upload a photo or scan of that '
+          'week\'s DTR and your Accomplishment Report, then enter the total '
+          'hours on the DTR. The hours are added to your credited total only '
+          'after your instructor approves that week.',
     ),
     (
       'How do I submit OJT requirements?',
@@ -30,9 +32,9 @@ class HelpCenterScreen extends StatelessWidget {
           'applications.',
     ),
     (
-      'What if I need to correct my attendance?',
-      'Use the Correction Request Form on the Attendance tab to flag an '
-          'issue for your instructor to review.',
+      'What if my instructor returns a week?',
+      'Open that week in the Weekly tab to read your instructor\'s remarks, '
+          'fix the files or hours, and resubmit. Approved weeks are locked.',
     ),
   ];
 
@@ -137,10 +139,10 @@ class HelpCenterScreen extends StatelessWidget {
                         'User Guide',
                         'TRACKIT walks you through OJT in four steps: '
                             '1) Activate your account with your department '
-                            'code. 2) Clock in/out daily under Attendance. '
-                            '3) Complete each OJT Requirements phase in '
-                            'order. 4) Submit a Weekly Activity Report '
-                            'every week from Document > Activity Reports.',
+                            'code. 2) Complete each OJT Requirements phase in '
+                            'order. 3) Confirm your company details and OJT '
+                            'start date. 4) Every week, upload your DTR and '
+                            'Accomplishment Report in the Weekly tab.',
                       ),
                     ),
                     const Divider(height: 1),
@@ -177,8 +179,9 @@ class HelpCenterScreen extends StatelessWidget {
                         context,
                         'Privacy Policy',
                         'TRACKIT collects only the information needed for '
-                            'OJT monitoring and documentation -- attendance, '
-                            'submitted requirements, and activity reports. '
+                            'OJT monitoring and documentation -- weekly DTRs '
+                            'and accomplishment reports, and submitted '
+                            'requirements. '
                             'Data is used solely by DCSE for OJT purposes '
                             'and is not shared with third parties.',
                       ),

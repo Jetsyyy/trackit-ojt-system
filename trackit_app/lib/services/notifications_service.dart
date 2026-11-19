@@ -52,9 +52,9 @@ class MockNotificationsService extends ChangeNotifier
     AppNotification(
       id: 'n-4',
       category: NotificationCategory.instructor,
-      title: 'Missing Attendance',
-      message: 'You have no attendance record for yesterday. Please clock in.',
-      target: NotificationTarget.attendance,
+      title: 'Weekly DTR/AR Due',
+      message: 'Upload last week\'s DTR and Accomplishment Report.',
+      target: NotificationTarget.weekly,
       createdAt: DateTime.now().subtract(const Duration(hours: 8)),
     ),
     AppNotification(

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/common/desk_ui.dart';
+import 'desk/admin_profile_desk.dart';
 import 'package:intl/intl.dart';
 import '../../models/admin_profile.dart';
 import '../../models/admin_session.dart';
@@ -295,6 +297,17 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isDeskLayout(context)) {
+      return AdminProfileDesk(
+        admin: widget.admin,
+        sessions: _sessions,
+        loadingSessions: _loadingSessions,
+        onEditProfile: _openEditProfileDialog,
+        onChangePassword: _openChangePasswordDialog,
+        onTerminate: _terminateSession,
+        onViewAllSessions: _openAllSessionsDialog,
+      );
+    }
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

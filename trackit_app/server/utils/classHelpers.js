@@ -40,11 +40,26 @@ function computeStudentStatus(companyName, lastLoginAt) {
 // among real classes. Everything else is, by definition, a past year.
 // Academic years are always stored as "YYYY-YYYY", same length, so plain
 // string DESC sorting is a correct year sort too.
+//
+// Since System Revisions item 20 the Admin archives a year explicitly, and
+// the next year becomes active even before it has sections, so the stored
+// app_settings.active_academic_year wins when present.
 async function getCurrentAcademicYear() {
+  const setting = await pool.query(
+    `SELECT value FROM app_settings WHERE key = 'active_academic_year'`,
+  ).catch(() => ({ rows: [] }));
+  if (setting.rows[0]?.value) return setting.rows[0].value;
   const result = await pool.query(
     'SELECT academic_year FROM instructor_classes ORDER BY academic_year DESC LIMIT 1',
   );
   return result.rows[0]?.academic_year ?? null;
+}
+
+// "2026-2027" -> "2027-2028".
+function nextAcademicYear(year) {
+  const match = /^(\d{4})-(\d{4})$/.exec(year || '');
+  if (!match) return null;
+  return `${Number(match[1]) + 1}-${Number(match[2]) + 1}`;
 }
 
 // Shared by adminClasses.js and adminInstructors.js -- the Instructor
@@ -88,5 +103,6 @@ module.exports = {
   programFullName,
   computeStudentStatus,
   getCurrentAcademicYear,
+  nextAcademicYear,
   loadClassStudents,
 };

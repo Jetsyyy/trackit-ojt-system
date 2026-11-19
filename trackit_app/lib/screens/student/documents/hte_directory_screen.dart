@@ -124,47 +124,68 @@ class _HteDirectoryScreenState extends State<HteDirectoryScreen> {
                 : Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                onChanged: (v) => setState(() => _query = v),
-                                decoration: InputDecoration(
-                                  hintText: 'Search companies...',
-                                  prefixIcon: const Icon(Icons.search),
-                                  filled: true,
-                                  fillColor: AppColors.cardWhite,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide.none,
+                        padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 30,
+                                  child: TextField(
+                                    onChanged: (v) => setState(() => _query = v),
+                                    style: const TextStyle(fontSize: 12.5),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search companies...',
+                                      hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF7A7A7A)),
+                                      prefixIcon: const Icon(Icons.search, size: 22, color: Colors.black),
+                                      contentPadding: EdgeInsets.zero,
+                                      filled: true,
+                                      fillColor: const Color(0xFFEDEDED),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                        borderSide: const BorderSide(color: Color(0xFF8A8A8A)),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                        borderSide: const BorderSide(color: AppColors.primaryMaroon),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Material(
-                              color: AppColors.cardWhite,
-                              borderRadius: BorderRadius.circular(14),
-                              child: IconButton(
-                                onPressed: _openLocationFilterSheet,
-                                tooltip: 'Filter by location',
-                                icon: Icon(
-                                  Icons.location_on_outlined,
-                                  color: _locationFilter == null
-                                      ? AppColors.primaryMaroon
-                                      : AppColors.accentOrange,
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: _openLocationFilterSheet,
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    color: _locationFilter == null ? const Color(0xFFEDEDED) : AppColors.primaryMaroon,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFF8A8A8A)),
+                                  ),
+                                  child: Icon(
+                                    Icons.location_on_outlined,
+                                    size: 20,
+                                    color: _locationFilter == null ? const Color(0xFF555555) : Colors.white,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                       SizedBox(
                         height: 40,
                         child: ListView(
                           scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
                           children: [
                             FilterChipPill(
                               label: 'All',
@@ -206,15 +227,10 @@ class _HteDirectoryScreenState extends State<HteDirectoryScreen> {
                                   ],
                                 )
                               : ListView.separated(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    0,
-                                    16,
-                                    24,
-                                  ),
+                                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
                                   itemCount: _filtered.length,
                                   separatorBuilder: (_, _) =>
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: 10),
                                   itemBuilder: (context, index) {
                                     final company = _filtered[index];
                                     return HteCompanyCard(
@@ -282,7 +298,8 @@ class _CompanyDetailSheet extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _DetailRow(icon: Icons.location_on_outlined, label: company.address),
-              _DetailRow(icon: Icons.email_outlined, label: company.email),
+              if (company.email.isNotEmpty)
+                _DetailRow(icon: Icons.email_outlined, label: company.email),
               if (company.website != null)
                 _DetailRow(icon: Icons.link, label: company.website!),
               if (company.dateAccredited != null)

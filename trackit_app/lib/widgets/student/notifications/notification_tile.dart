@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/notification.dart';
 import '../../../utils/app_colors.dart';
+import '../../common/desk_ui.dart';
 
 class NotificationTile extends StatelessWidget {
   final AppNotification notification;
@@ -83,10 +84,9 @@ class NotificationTile extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: notification.isRead
-                  ? AppColors.cardWhite
-                  : AppColors.statRedBg.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(16),
+              color: notification.isRead ? AppColors.cardWhite : DeskColors.tile,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: DeskColors.tileBorder),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,7 +96,7 @@ class NotificationTile extends StatelessWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     color: _categoryBg,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
                   child: Icon(_categoryIcon, size: 16, color: _categoryColor),

@@ -26,7 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _pushEnabled = true;
   bool _emailEnabled = true;
   bool _documentUpdates = true;
-  bool _attendanceReminders = true;
+  bool _weeklyReminders = true;
   bool _reportUpdates = true;
   bool _systemAnnouncements = true;
   bool _profilePublic = false;
@@ -155,12 +155,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       SettingsTile(
                         icon: Icons.event_available_outlined,
-                        title: 'Attendance Reminders',
+                        title: 'Weekly Submission Reminders',
                         trailing: Switch(
-                          value: _attendanceReminders,
+                          value: _weeklyReminders,
                           activeThumbColor: AppColors.primaryMaroon,
                           onChanged: (v) =>
-                              setState(() => _attendanceReminders = v),
+                              setState(() => _weeklyReminders = v),
                         ),
                       ),
                       SettingsTile(

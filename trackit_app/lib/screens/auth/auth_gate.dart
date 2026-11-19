@@ -38,7 +38,14 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _checkSession() async {
-    final role = await _roleStore.load();
+    final stored = await _roleStore.load();
+    if (stored.expired) {
+      // Logged in without "Remember me" in an earlier browser/app session.
+      await _authService.logout();
+      await _instructorAuthService.logout();
+      await _adminAuthService.logout();
+    }
+    final role = stored.role;
     SessionRole? resolvedRole;
     if (role == SessionRole.student) {
       final token = await _authService.loadStoredToken();

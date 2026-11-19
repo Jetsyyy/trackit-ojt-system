@@ -9,6 +9,21 @@ class RawFileResponse {
   const RawFileResponse({required this.bytes, this.filename});
 }
 
+/// One file in a [ApiClient.postMultipartFiles] request.
+class MultipartUpload {
+  final String fieldName;
+  final String fileName;
+  final List<int> bytes;
+  final String contentType;
+
+  const MultipartUpload({
+    required this.fieldName,
+    required this.fileName,
+    required this.bytes,
+    required this.contentType,
+  });
+}
+
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
@@ -129,6 +144,32 @@ class ApiClient {
           fileBytes,
           filename: fileName,
           contentType: MediaType.parse(contentType),
+        ),
+      );
+    }
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    return _decode(response);
+  }
+
+  /// Like [postMultipart], but for several files at once -- each file
+  /// carries its own form field name (e.g. the weekly submission's 'dtr'
+  /// and 'ar' files go up in one request).
+  Future<Map<String, dynamic>> postMultipartFiles(
+    String path, {
+    required List<MultipartUpload> files,
+    Map<String, String> fields = const {},
+  }) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+    if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+    request.fields.addAll(fields);
+    for (final file in files) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          file.fieldName,
+          file.bytes,
+          filename: file.fileName,
+          contentType: MediaType.parse(file.contentType),
         ),
       );
     }

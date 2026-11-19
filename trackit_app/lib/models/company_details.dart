@@ -9,16 +9,13 @@ class CompanyDetails {
   final String supervisorName;
   final String contactNumber;
 
-  /// The geofence center for Attendance clock in/out, captured by the
-  /// student standing at the company (see "Set My Location"). Null until
-  /// they've captured it -- there's no Admin module yet to set a verified
-  /// location instead.
+  /// Legacy geofence center from the retired clock in/out feature; kept
+  /// only so older records still parse.
   final double? latitude;
   final double? longitude;
 
   /// When the student began their OJT at this company, self-reported.
-  /// Drives the OJT Hours Progress status badge (On Track/Behind/etc.) by
-  /// giving it a real timeline to compare actual pace against.
+  /// Weekly DTR/AR slots start from this date.
   final DateTime? ojtStartDate;
 
   bool get hasLocation => latitude != null && longitude != null;
@@ -37,10 +34,10 @@ class CompanyDetails {
   factory CompanyDetails.fromJson(Map<String, dynamic> json) {
     return CompanyDetails(
       name: json['name'] as String,
-      address: json['address'] as String,
-      industry: json['industry'] as String,
-      supervisorName: json['supervisorName'] as String,
-      contactNumber: json['contactNumber'] as String,
+      address: json['address'] as String? ?? '',
+      industry: json['industry'] as String? ?? '',
+      supervisorName: json['supervisorName'] as String? ?? '',
+      contactNumber: json['contactNumber'] as String? ?? '',
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       ojtStartDate: json['ojtStartDate'] != null
@@ -57,6 +54,7 @@ class CompanyDetails {
     'contactNumber': contactNumber,
     'latitude': latitude,
     'longitude': longitude,
-    'ojtStartDate': ojtStartDate?.toIso8601String(),
+    // Date only -- a calendar day, not a moment in time.
+    'ojtStartDate': ojtStartDate?.toIso8601String().substring(0, 10),
   };
 }

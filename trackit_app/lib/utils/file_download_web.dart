@@ -7,7 +7,9 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 bool downloadBytes({required String filename, required List<int> bytes}) {
-  final blob = html.Blob([Uint8List.fromList(bytes)], 'text/csv');
+  // Generic type: used for CSV, Excel and PDF downloads alike; the
+  // filename's extension tells the browser/OS what the file is.
+  final blob = html.Blob([Uint8List.fromList(bytes)], 'application/octet-stream');
   final url = html.Url.createObjectUrlFromBlob(blob);
   html.AnchorElement(href: url)
     ..setAttribute('download', filename)

@@ -1,28 +1,28 @@
 import 'package:flutter/material.dart';
-import '../../models/attendance.dart';
 import '../../models/notification.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/student.dart';
 import '../../models/student_profile.dart';
 import '../../services/api_client.dart';
-import '../../services/attendance_service.dart';
 import '../../services/notifications_service.dart';
+import '../../services/progress_service.dart';
 import '../../services/student_announcements_service.dart';
-import '../../utils/app_colors.dart';
+import '../../services/weekly_submissions_service.dart';
 import '../../widgets/common/app_bottom_nav.dart';
-import 'attendance_tab_navigator.dart';
+import '../../widgets/student/student_ui.dart';
 import 'documents/documents_tab_navigator.dart';
 import 'notifications_screen.dart';
 import 'profile/profile_tab_navigator.dart';
 import 'student_announcements_screen.dart';
 import 'student_home_view.dart';
 
+/// Student app frame (TrackIT student mockup): three tabs -- Document,
+/// Home, Profile -- with Home in the middle. Weekly DTR & AR now lives
+/// under Documents, and Notifications open from the bell in every header.
 class StudentShell extends StatefulWidget {
   final ApiClient client;
   final Student student;
   final OjtProgress initialProgress;
-  final TodayAttendance initialAttendance;
-  final List<AttendanceHistoryEntry> initialHistory;
   final VoidCallback onLoggedOut;
 
   const StudentShell({
@@ -30,8 +30,6 @@ class StudentShell extends StatefulWidget {
     required this.client,
     required this.student,
     required this.initialProgress,
-    required this.initialAttendance,
-    this.initialHistory = const [],
     required this.onLoggedOut,
   });
 
@@ -40,44 +38,97 @@ class StudentShell extends StatefulWidget {
 }
 
 class _StudentShellState extends State<StudentShell> {
-  int _navIndex = 0;
+  static const int _documentsTab = 0;
+  static const int _homeTab = 1;
+  static const int _profileTab = 2;
+
+  int _navIndex = _homeTab;
   // Mutable so Edit Profile's changes (name, avatar) show up immediately
-  // across the shell -- Home's profile card, the Documents tab, etc. --
-  // instead of only after the next full login.
+  // across the shell instead of only after the next full login.
   late Student _student = widget.student;
-  late final AttendanceService _attendanceService = HttpAttendanceService(
-    widget.client,
-  );
+  // Mutable so Home's hours reflect newly approved weeks without a
+  // re-login (refreshed whenever Home is opened or a week is submitted).
+  late OjtProgress _progress = widget.initialProgress;
+  late final ProgressService _progressService = HttpProgressService(widget.client);
+  late final WeeklySubmissionsService _weeklyService =
+      HttpWeeklySubmissionsService(widget.client);
   late final NotificationsService _notificationsService =
       HttpNotificationsService(widget.client);
   late final StudentAnnouncementsService _announcementsService =
       HttpStudentAnnouncementsService(widget.client);
+  final GlobalKey<DocumentsTabNavigatorState> _documentsKey = GlobalKey();
+
+  // Bumped whenever Weekly Submissions opens so it re-fetches -- an
+  // instructor may have reviewed a week since it was last shown.
+  final ValueNotifier<int> _weeklyReload = ValueNotifier(0);
 
   @override
   void initState() {
     super.initState();
-    // Loaded once here (rather than only inside NotificationsScreen) so
-    // the Home tab's announcement preview has data even if the student
-    // never opens the Notifications tab.
+    // Loaded here so Home's preview and the bell badge have data.
     _notificationsService.load();
   }
 
-  void _goToTab(NotificationTarget target) {
-    final index = switch (target) {
-      NotificationTarget.home => 0,
-      NotificationTarget.attendance => 1,
-      NotificationTarget.documents => 2,
-      NotificationTarget.profile => 4,
-    };
+  @override
+  void dispose() {
+    _weeklyReload.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshProgress() async {
+    try {
+      final progress = await _progressService.getProgress();
+      if (mounted) setState(() => _progress = progress);
+    } catch (_) {
+      // Keep showing the last known numbers; pull-to-refresh can retry.
+    }
+  }
+
+  void _selectTab(int index) {
     setState(() => _navIndex = index);
+    if (index == _homeTab) _refreshProgress();
+  }
+
+  void _openWeekly() {
+    _selectTab(_documentsTab);
+    _documentsKey.currentState?.openWeekly();
+  }
+
+  void _goToTab(NotificationTarget target) {
+    switch (target) {
+      case NotificationTarget.home:
+        _selectTab(_homeTab);
+      case NotificationTarget.weekly:
+        _openWeekly();
+      case NotificationTarget.documents:
+        _selectTab(_documentsTab);
+      case NotificationTarget.profile:
+        _selectTab(_profileTab);
+    }
+  }
+
+  void _openNotifications() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          body: StudentBackdrop(
+            child: NotificationsScreen(
+              service: _notificationsService,
+              onNavigateTo: (target) {
+                Navigator.of(context).pop();
+                _goToTab(target);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _updateStudentFromProfile(StudentProfile profile) {
     setState(() => _student = Student.fromProfile(profile));
   }
 
-  // Home has no nested Navigator of its own (unlike the tabs that do), so
-  // "See All" on the announcement preview uses a plain root-level push.
   void _openAnnouncements() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -89,22 +140,25 @@ class _StudentShellState extends State<StudentShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      StudentHomeView(
+      DocumentsTabNavigator(
+        key: _documentsKey,
         student: _student,
-        progress: widget.initialProgress,
-        announcementsService: _announcementsService,
-        onOpenAnnouncements: _openAnnouncements,
+        client: widget.client,
+        weeklyService: _weeklyService,
+        weeklyReload: _weeklyReload,
+        onWeekSubmitted: _refreshProgress,
       ),
-      AttendanceTabNavigator(
-        service: _attendanceService,
-        initialProgress: widget.initialProgress,
-        initialAttendance: widget.initialAttendance,
-        initialHistory: widget.initialHistory,
-      ),
-      DocumentsTabNavigator(student: _student, client: widget.client),
-      NotificationsScreen(
-        service: _notificationsService,
-        onNavigateTo: _goToTab,
+      StudentBackdrop(
+        child: StudentHomeView(
+          student: _student,
+          progress: _progress,
+          onRefresh: _refreshProgress,
+          onOpenWeekly: _openWeekly,
+          announcementsService: _announcementsService,
+          onOpenAnnouncements: _openAnnouncements,
+          notificationsService: _notificationsService,
+          onOpenNotifications: _openNotifications,
+        ),
       ),
       ProfileTabNavigator(
         client: widget.client,
@@ -113,35 +167,22 @@ class _StudentShellState extends State<StudentShell> {
       ),
     ];
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: IndexedStack(index: _navIndex, children: pages),
-      bottomNavigationBar: ListenableBuilder(
-        listenable: _notificationsService,
-        builder: (context, _) {
-          final navItems = [
-            const AppBottomNavItem(icon: Icons.home, label: 'Home'),
-            const AppBottomNavItem(
-              icon: Icons.event_available,
-              label: 'Attendance',
-            ),
-            const AppBottomNavItem(
-              icon: Icons.description,
-              label: 'Document',
-            ),
-            AppBottomNavItem(
-              icon: Icons.notifications,
-              label: 'Notification',
-              badgeCount: _notificationsService.unreadCount,
-            ),
-            const AppBottomNavItem(icon: Icons.person, label: 'Profile'),
-          ];
-          return AppBottomNav(
-            items: navItems,
-            currentIndex: _navIndex,
-            onTap: (index) => setState(() => _navIndex = index),
-          );
-        },
+    return StudentChrome(
+      onOpenNotifications: _openNotifications,
+      unreadListenable: _notificationsService,
+      unreadCount: () => _notificationsService.unreadCount,
+      child: Scaffold(
+        backgroundColor: StudentColors.page,
+        body: IndexedStack(index: _navIndex, children: pages),
+        bottomNavigationBar: AppBottomNav(
+          items: const [
+            AppBottomNavItem(icon: Icons.description_outlined, label: 'Document'),
+            AppBottomNavItem(icon: Icons.home_outlined, label: 'Home'),
+            AppBottomNavItem(icon: Icons.person_outline, label: 'Profile'),
+          ],
+          currentIndex: _navIndex,
+          onTap: _selectTab,
+        ),
       ),
     );
   }

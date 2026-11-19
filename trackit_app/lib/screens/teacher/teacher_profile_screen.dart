@@ -5,6 +5,8 @@ import '../../services/api_client.dart';
 import '../../services/teacher_profile_service.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/common/app_header.dart';
+import '../../widgets/common/desk_ui.dart';
+import 'desk/teacher_profile_desk.dart';
 import '../../widgets/common/settings_tile.dart';
 import '../../widgets/common/skeleton_list_tile.dart';
 
@@ -59,8 +61,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     }
   }
 
-  Future<void> _pickAndUploadAvatar(ImageSource source) async {
-    Navigator.of(context).pop(); // close the picker sheet
+  Future<void> _pickAndUploadAvatar(ImageSource source, {bool fromSheet = true}) async {
+    if (fromSheet) Navigator.of(context).pop(); // close the picker sheet
     final picker = ImagePicker();
     XFile? picked;
     try {
@@ -369,6 +371,33 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isDeskLayout(context)) {
+      if (_loading || _profile == null) {
+        return const ColoredBox(
+          color: DeskColors.page,
+          child: Center(child: CircularProgressIndicator(color: DeskColors.maroon)),
+        );
+      }
+      return TeacherProfileDesk(
+        profile: _profile!,
+        uploading: _uploadingAvatar,
+        onChangePhoto: () async {
+          await _pickAndUploadAvatar(ImageSource.gallery, fromSheet: false);
+          await _load();
+        },
+        onChangeEmail: () async {
+          await _showChangeEmailDialog();
+          await _load();
+        },
+        onChangePassword: () async {
+          await _showChangePasswordDialog();
+          await _load();
+        },
+        onOpenHelpCenter: widget.onOpenHelpCenter,
+        onOpenSettings: widget.onOpenSettings,
+        onRefresh: _load,
+      );
+    }
     return SafeArea(
       top: false,
       bottom: false,

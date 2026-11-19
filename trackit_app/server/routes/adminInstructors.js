@@ -1,7 +1,11 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
-const { generateInstructorActivationCode } = require('../utils/activationCode');
+const {
+  generateInstructorActivationCode,
+  generateInstructorRegistrationCode,
+} = require('../utils/activationCode');
+const { sendNoticeEmail } = require('../utils/mailer');
 const { getCurrentAcademicYear, loadClassStudents } = require('../utils/classHelpers');
 
 const router = express.Router();
@@ -14,11 +18,13 @@ router.use(requireAdminAuth);
 router.get('/', async (req, res) => {
   try {
     const { search } = req.query;
+    // Pending/declined self-registrations live under /requests, not the
+    // faculty list.
     const params = [];
-    let where = '';
+    let where = `WHERE approval_status = 'approved'`;
     if (search) {
       params.push(`%${search.toString().toLowerCase()}%`);
-      where = `WHERE LOWER(name) LIKE $1 OR LOWER(instructor_number) LIKE $1`;
+      where += ` AND (LOWER(name) LIKE $1 OR LOWER(instructor_number) LIKE $1)`;
     }
     const result = await pool.query(
       `SELECT id, name, instructor_number, photo_url, status, password_hash IS NOT NULL AS is_activated
@@ -152,6 +158,214 @@ async function loadAssignedSectionsAndStudents(instructorId, academicYear) {
 
   return { assignedSections, enrolledStudents };
 }
+
+// ---------- Instructor registration codes (System Revisions item 19) ----------
+// The admin generates a single-use code and gives it to one instructor,
+// who registers with their own details (routes/instructorAuth.js). These
+// routes are defined before '/:id' so their paths aren't read as an id.
+
+function toCodeJson(row) {
+  let status = 'available';
+  if (row.revoked_at) status = 'revoked';
+  else if (row.used_at) status = 'used';
+  return {
+    id: Number(row.id),
+    code: row.code,
+    note: row.note,
+    status,
+    createdAt: row.created_at,
+    usedAt: row.used_at,
+    usedByName: row.used_by_name || null,
+  };
+}
+
+router.get('/registration-codes', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT rc.*, a.name AS used_by_name
+       FROM instructor_registration_codes rc
+       LEFT JOIN advisers a ON a.id = rc.used_by
+       ORDER BY rc.created_at DESC
+       LIMIT 200`,
+    );
+    res.json({ success: true, codes: result.rows.map(toCodeJson) });
+  } catch (error) {
+    console.error('Get instructor registration codes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load registration codes.' });
+  }
+});
+
+// Body: { note } -- optional label, e.g. who the code is for.
+router.post('/registration-codes', async (req, res) => {
+  try {
+    const note = (req.body.note || '').toString().trim() || null;
+    const code = await generateInstructorRegistrationCode();
+    const inserted = await pool.query(
+      `INSERT INTO instructor_registration_codes (code, note, created_by)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [code, note, req.adminId ?? null],
+    );
+    res.status(201).json({ success: true, code: toCodeJson(inserted.rows[0]) });
+  } catch (error) {
+    console.error('Create instructor registration code error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate a code.' });
+  }
+});
+
+router.patch('/registration-codes/:codeId/revoke', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE instructor_registration_codes SET revoked_at = now()
+       WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL
+       RETURNING *`,
+      [Number(req.params.codeId)],
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(409)
+        .json({ success: false, message: 'This code was already used or revoked.' });
+    }
+    res.json({ success: true, code: toCodeJson(result.rows[0]) });
+  } catch (error) {
+    console.error('Revoke instructor registration code error:', error);
+    res.status(500).json({ success: false, message: 'Failed to revoke the code.' });
+  }
+});
+
+// ---------- Instructor account requests ----------
+
+router.get('/requests', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, phone, instructor_number, department, position, created_at
+       FROM advisers
+       WHERE approval_status = 'pending'
+       ORDER BY created_at ASC`,
+    );
+    res.json({
+      success: true,
+      requests: result.rows.map((row) => ({
+        id: Number(row.id),
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        instructorNumber: row.instructor_number,
+        department: row.department,
+        position: row.position,
+        requestedAt: row.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Get instructor requests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load instructor requests.' });
+  }
+});
+
+// Body: { decision: 'approved' | 'rejected', sectionIds: number[], reason }.
+// Approving requires at least one section; only sections with no
+// instructor yet can be assigned here, so approving never silently takes
+// a section away from another instructor. Declining requires a reason.
+router.patch('/requests/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const instructorId = Number(req.params.id);
+    const { decision } = req.body;
+    const reason = (req.body.reason || '').toString().trim();
+    const sectionIds = Array.isArray(req.body.sectionIds)
+      ? [...new Set(req.body.sectionIds.map(Number).filter(Number.isFinite))]
+      : [];
+
+    if (decision !== 'approved' && decision !== 'rejected') {
+      return res
+        .status(400)
+        .json({ success: false, message: 'decision must be "approved" or "rejected".' });
+    }
+    if (decision === 'approved' && sectionIds.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Assign at least one section before approving.' });
+    }
+    if (decision === 'rejected' && !reason) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Add a reason for declining.' });
+    }
+
+    await client.query('BEGIN');
+    const found = await client.query(
+      `SELECT id, name, email FROM advisers
+       WHERE id = $1 AND approval_status = 'pending'
+       FOR UPDATE`,
+      [instructorId],
+    );
+    if (found.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res
+        .status(404)
+        .json({ success: false, message: 'This request was not found or was already decided.' });
+    }
+    const instructor = found.rows[0];
+
+    if (decision === 'approved') {
+      const assigned = await client.query(
+        `UPDATE instructor_classes SET instructor_id = $1
+         WHERE id = ANY($2::bigint[]) AND instructor_id IS NULL
+         RETURNING id`,
+        [instructorId, sectionIds],
+      );
+      if (assigned.rows.length !== sectionIds.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message:
+            'One or more of those sections already has an instructor. Refresh and pick unassigned sections.',
+        });
+      }
+      await client.query(
+        `UPDATE advisers
+         SET approval_status = 'approved', approval_decided_at = now(),
+             rejection_reason = NULL, activated_at = COALESCE(activated_at, now())
+         WHERE id = $1`,
+        [instructorId],
+      );
+    } else {
+      await client.query(
+        `UPDATE advisers
+         SET approval_status = 'rejected', approval_decided_at = now(), rejection_reason = $2
+         WHERE id = $1`,
+        [instructorId, reason],
+      );
+    }
+    await client.query('COMMIT');
+
+    try {
+      if (decision === 'approved') {
+        await sendNoticeEmail(
+          instructor.email,
+          'Your TRACKIT instructor account was approved',
+          `Hi ${instructor.name},\n\nYour TRACKIT instructor account was approved. You can now log in.`,
+        );
+      } else {
+        await sendNoticeEmail(
+          instructor.email,
+          'Your TRACKIT instructor registration was declined',
+          `Hi ${instructor.name},\n\nYour TRACKIT instructor registration was declined: ${reason}`,
+        );
+      }
+    } catch (mailError) {
+      console.error('Instructor decision email not sent:', mailError.message);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Decide instructor request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save decision.' });
+  } finally {
+    client.release();
+  }
+});
 
 router.get('/:id', async (req, res) => {
   try {

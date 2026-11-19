@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'screens/auth/auth_gate.dart';
 
 void main() {
@@ -30,7 +31,12 @@ class MainApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'TRACKIT',
-      theme: ThemeData(useMaterial3: true),
+      // Inter, matching the TrackIT mockups. Loaded by google_fonts; if it
+      // can't be fetched (no internet) Flutter falls back to the default.
+      theme: ThemeData(
+        useMaterial3: true,
+        fontFamily: GoogleFonts.inter().fontFamily,
+      ),
       home: const AuthGate(),
     );
   }

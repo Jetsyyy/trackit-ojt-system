@@ -23,6 +23,9 @@ router.get('/', async (req, res) => {
         ) AS contacts
        FROM hte_companies c
        LEFT JOIN hte_company_contacts ct ON ct.company_id = c.id
+       -- Entries added automatically from student details stay out of the
+       -- student-facing directory until the Admin reviews them.
+       WHERE c.source = 'admin'
        GROUP BY c.id
        ORDER BY c.name ASC`,
     );
@@ -43,6 +46,53 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Get HTE companies error:', error);
     res.status(500).json({ success: false, message: 'Failed to load companies.' });
+  }
+});
+
+// Company suggestions while typing (System Revisions item 8): matches
+// from the Admin's HTE Directory plus companies other students already
+// entered, so the same company isn't saved under different spellings.
+// GET /suggest?q=acc -> up to 8 { name, address, industry, source }.
+router.get('/suggest', async (req, res) => {
+  try {
+    const q = (req.query.q || '').toString().trim();
+    if (q.length < 2) return res.json({ success: true, suggestions: [] });
+    const pattern = `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+    const result = await pool.query(
+      `WITH directory AS (
+         SELECT name, address, industry, 'directory' AS source, 0 AS rank
+         FROM hte_companies
+         WHERE LOWER(name) LIKE $1
+       ),
+       entered AS (
+         SELECT DISTINCT ON (LOWER(TRIM(company_name)))
+                TRIM(company_name) AS name, company_address AS address,
+                company_industry AS industry, 'students' AS source, 1 AS rank
+         FROM student_profiles
+         WHERE company_name IS NOT NULL AND LOWER(company_name) LIKE $1
+         ORDER BY LOWER(TRIM(company_name)), company_confirmed_at DESC NULLS LAST
+       )
+       SELECT * FROM directory
+       UNION ALL
+       SELECT * FROM entered e
+       WHERE NOT EXISTS (SELECT 1 FROM directory d WHERE LOWER(d.name) = LOWER(e.name))
+       ORDER BY rank, name
+       LIMIT 8`,
+      [pattern],
+    );
+    res.json({
+      success: true,
+      suggestions: result.rows.map((row) => ({
+        name: row.name,
+        address: row.address,
+        industry: row.industry,
+        source: row.source,
+      })),
+    });
+  } catch (error) {
+    console.error('Suggest companies error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load suggestions.' });
   }
 });
 

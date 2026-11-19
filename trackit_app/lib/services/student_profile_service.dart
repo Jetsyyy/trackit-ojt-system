@@ -29,6 +29,42 @@ abstract class StudentProfileService {
   /// collects the supervisor's name and contact number together with the
   /// company info.
   Future<StudentProfile> submitCompanyDetails(CompanyDetails details);
+
+  /// The supervisor can change after deployment, so it stays editable
+  /// after the one-time company entry (System Revisions item 5).
+  Future<StudentProfile> updateSupervisor({
+    required String supervisorName,
+    required String contactNumber,
+  });
+
+  /// Matching companies already saved in the system, for suggestions
+  /// while typing the company name (System Revisions item 8).
+  Future<List<CompanySuggestion>> suggestCompanies(String query);
+}
+
+class CompanySuggestion {
+  final String name;
+  final String? address;
+  final String? industry;
+
+  /// 'directory' (Admin's HTE Directory) or 'students' (entered before).
+  final String source;
+
+  const CompanySuggestion({
+    required this.name,
+    this.address,
+    this.industry,
+    required this.source,
+  });
+
+  factory CompanySuggestion.fromJson(Map<String, dynamic> json) {
+    return CompanySuggestion(
+      name: json['name'] as String,
+      address: json['address'] as String?,
+      industry: json['industry'] as String?,
+      source: json['source'] as String? ?? 'students',
+    );
+  }
 }
 
 class MockStudentProfileService implements StudentProfileService {
@@ -78,6 +114,15 @@ class MockStudentProfileService implements StudentProfileService {
     _profile = _profile.withCompanyDetails(details);
     return _profile;
   }
+
+  @override
+  Future<StudentProfile> updateSupervisor({
+    required String supervisorName,
+    required String contactNumber,
+  }) async => _profile;
+
+  @override
+  Future<List<CompanySuggestion>> suggestCompanies(String query) async => const [];
 }
 
 class HttpStudentProfileService implements StudentProfileService {
@@ -135,5 +180,26 @@ class HttpStudentProfileService implements StudentProfileService {
   Future<StudentProfile> submitCompanyDetails(CompanyDetails details) async {
     await client.post('/api/profile/company', body: details.toJson());
     return getProfile();
+  }
+
+  @override
+  Future<StudentProfile> updateSupervisor({
+    required String supervisorName,
+    required String contactNumber,
+  }) async {
+    await client.patch(
+      '/api/profile/company/supervisor',
+      body: {'supervisorName': supervisorName, 'contactNumber': contactNumber},
+    );
+    return getProfile();
+  }
+
+  @override
+  Future<List<CompanySuggestion>> suggestCompanies(String query) async {
+    final uri = Uri(path: '/api/hte-companies/suggest', queryParameters: {'q': query});
+    final response = await client.get(uri.toString());
+    return (response['suggestions'] as List<dynamic>)
+        .map((row) => CompanySuggestion.fromJson(row as Map<String, dynamic>))
+        .toList();
   }
 }

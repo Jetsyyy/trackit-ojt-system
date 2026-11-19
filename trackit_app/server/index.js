@@ -16,6 +16,7 @@ const adminOverviewRoutes = require('./routes/adminOverview');
 const adminAnnouncementsRoutes = require('./routes/adminAnnouncements');
 const adminHteCompaniesRoutes = require('./routes/adminHteCompanies');
 const adminArchiveRoutes = require('./routes/adminArchive');
+const adminRequirementsRoutes = require('./routes/adminRequirements');
 const teacherDashboardRoutes = require('./routes/teacherDashboard');
 const teacherClassesRoutes = require('./routes/teacherClasses');
 const classesRoutes = require('./routes/classes');
@@ -45,6 +46,7 @@ for (const dir of [
   'uploads/avatars',
   'uploads/announcements',
   'uploads/admin-announcements',
+  'uploads/weekly',
 ]) {
   fs.mkdirSync(path.join(__dirname, dir), { recursive: true });
 }
@@ -87,6 +89,7 @@ app.use('/api/admin/overview', adminOverviewRoutes);
 app.use('/api/admin/announcements', adminAnnouncementsRoutes);
 app.use('/api/admin/hte-companies', adminHteCompaniesRoutes);
 app.use('/api/admin/archive', adminArchiveRoutes);
+app.use('/api/admin/requirements', adminRequirementsRoutes);
 app.use('/api/teacher/dashboard', teacherDashboardRoutes);
 app.use('/api/teacher/classes', teacherClassesRoutes);
 app.use('/api/teacher/students', teacherStudentsRoutes);

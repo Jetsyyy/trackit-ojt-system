@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
 import '../../utils/app_colors.dart';
+import '../../widgets/auth/portal_layout.dart';
 import '../teacher/instructor_register_screen.dart';
 import 'register_screen.dart';
 
@@ -30,16 +31,40 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _roleStore = SessionRoleStore();
   bool _submitting = false;
-  bool _obscurePassword = true;
+  bool _rememberMe = false;
   String? _errorMessage;
   SessionRole _role = SessionRole.student;
+
+  @override
+  void initState() {
+    super.initState();
+    // An Admin invite link (.../?code=INS-XXXX-XXXX) opens instructor
+    // sign-up with the code filled in.
+    final code = Uri.base.queryParameters['code']?.trim();
+    if (code != null && code.toUpperCase().startsWith('INS-')) {
+      _role = SessionRole.instructor;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openRegister(initialCode: code.toUpperCase());
+      });
+    }
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _switchPortal(SessionRole role) {
+    if (role == _role) return;
+    setState(() {
+      _role = role;
+      _errorMessage = null;
+    });
+    _formKey.currentState?.reset();
   }
 
   Future<void> _submit() async {
@@ -69,6 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
           );
           break;
       }
+      await _roleStore.setRemember(_rememberMe);
       if (!mounted) return;
       widget.onLoggedIn(_role);
     } on ApiException catch (e) {
@@ -82,191 +108,176 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _openRegister() {
-    if (_role == SessionRole.student) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => RegisterScreen(
-            authService: widget.authService,
-            onRegistered: () => widget.onLoggedIn(SessionRole.student),
-          ),
+  Future<void> _registered(SessionRole role) async {
+    await _roleStore.setRemember(true);
+    widget.onLoggedIn(role);
+  }
+
+  void _openRegister({String? initialCode}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _role == SessionRole.student
+            ? RegisterScreen(
+                authService: widget.authService,
+                onRegistered: () => _registered(SessionRole.student),
+              )
+            : InstructorRegisterScreen(
+                instructorAuthService: widget.instructorAuthService,
+                onRegistered: () => _registered(SessionRole.instructor),
+                initialCode: initialCode,
+              ),
+      ),
+    );
+  }
+
+  // There's no self-service reset by email yet, so say who can help.
+  void _forgotPassword() {
+    final who = switch (_role) {
+      SessionRole.student => 'your OJT instructor',
+      SessionRole.instructor => 'the OJT coordinator (Admin)',
+      SessionRole.admin => 'your system administrator',
+    };
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.lock_reset, color: AppColors.primaryMaroon, size: 32),
+        title: const Text('Forgot your password?'),
+        content: Text(
+          'Resetting a password by email isn\'t available yet. Please contact '
+          '$who to get back into your account.',
         ),
-      );
-    } else {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => InstructorRegisterScreen(
-            instructorAuthService: widget.instructorAuthService,
-            onRegistered: () => widget.onLoggedIn(SessionRole.instructor),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(foregroundColor: AppColors.primaryMaroon),
+            child: const Text('OK'),
           ),
-        ),
-      );
-    }
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _formKey,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 4,
-                          height: 20,
-                          color: AppColors.accentOrange,
-                          margin: const EdgeInsets.only(right: 8),
-                        ),
-                        const Text(
-                          'TRACKIT',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Welcome Back',
+    final isAdmin = _role == SessionRole.admin;
+    return PortalLayout(
+      portal: _role,
+      onPortalChanged: _switchPortal,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const PortalTitle(
+              title: 'Welcome Back!',
+              subtitle: 'Sign in to manage OJT records and documentation.',
+            ),
+            if (_errorMessage != null) PortalMessage(message: _errorMessage!),
+            PortalField(
+              key: const ValueKey('login-email'),
+              label: 'Email',
+              hint: isAdmin || _role == SessionRole.instructor
+                  ? 'Enter your university email'
+                  : 'Enter your email',
+              icon: Icons.mail_outline,
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Email is required' : null,
+            ),
+            PortalField(
+              key: const ValueKey('login-password'),
+              label: 'Password',
+              hint: 'Enter your password',
+              icon: Icons.lock_outline,
+              controller: _passwordController,
+              isPassword: true,
+              validator: (v) =>
+                  (v == null || v.isEmpty) ? 'Password is required' : null,
+              onSubmitted: (_) => _submit(),
+            ),
+            Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    value: _rememberMe,
+                    activeColor: AppColors.primaryMaroon,
+                    side: const BorderSide(color: Color(0xFFBDBDBD)),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _rememberMe = !_rememberMe),
+                  child: const Text(
+                    'Remember me',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ),
+                const Spacer(),
+                InkWell(
+                  onTap: _forgotPassword,
+                  borderRadius: BorderRadius.circular(4),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      'Forgot password?',
                       style: TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.primaryMaroon,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Log in to continue tracking your OJT.',
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 24),
-                    SegmentedButton<SessionRole>(
-                      segments: const [
-                        ButtonSegment(
-                          value: SessionRole.student,
-                          label: Text('Student'),
-                          icon: Icon(Icons.school_outlined),
-                        ),
-                        ButtonSegment(
-                          value: SessionRole.instructor,
-                          label: Text('Instructor'),
-                          icon: Icon(Icons.person_outline),
-                        ),
-                        ButtonSegment(
-                          value: SessionRole.admin,
-                          label: Text('Admin'),
-                          icon: Icon(Icons.admin_panel_settings_outlined),
-                        ),
-                      ],
-                      selected: {_role},
-                      onSelectionChanged: (selection) => setState(() {
-                        _role = selection.first;
-                        _errorMessage = null;
-                      }),
-                      style: SegmentedButton.styleFrom(
-                        selectedBackgroundColor: AppColors.primaryMaroon,
-                        selectedForegroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            PortalPrimaryButton(
+              label: 'Sign in',
+              loading: _submitting,
+              onPressed: _submit,
+            ),
+            const SizedBox(height: 18),
+            if (isAdmin) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F4F2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.primaryMaroon.withValues(alpha: 0.7)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.lock_outline, size: 16, color: AppColors.primaryMaroon),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'For authorized PLSP administrators only. Keep your '
+                        'credentials secure and sign out after use.',
+                        style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary, height: 1.4),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    if (_errorMessage != null) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.statRedBg,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: AppColors.statRedIcon),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    TextFormField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Email is required'
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
-                          ),
-                          tooltip: _obscurePassword
-                              ? 'Show password'
-                              : 'Hide password',
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
-                        ),
-                      ),
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'Password is required'
-                          : null,
-                      onFieldSubmitted: (_) => _submit(),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _submitting ? null : _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryMaroon,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: _submitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Log In'),
-                    ),
-                    if (_role != SessionRole.admin) ...[
-                      const SizedBox(height: 16),
-                      Center(
-                        child: TextButton(
-                          onPressed: _openRegister,
-                          child: const Text("Don't have an account? Register"),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
-            ),
-          ),
+              const SizedBox(height: 14),
+              const PortalLinkLine(
+                text: 'Need access?',
+                link: 'Contact your system administrator',
+              ),
+            ] else
+              PortalLinkLine(
+                text: "Don't have an account?",
+                link: 'Register',
+                onTap: () => _openRegister(),
+              ),
+          ],
         ),
       ),
     );

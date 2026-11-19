@@ -2,39 +2,53 @@ import 'package:flutter/material.dart';
 import '../../models/admin_profile.dart';
 import '../../services/api_client.dart';
 import '../../utils/app_colors.dart';
-import 'admin_announcements_screen.dart';
+import '../../widgets/common/desk_ui.dart';
+import '../../widgets/common/trackit_sidebar.dart';
 import 'admin_archive_screen.dart';
-import 'admin_class_management_screen.dart';
-import 'admin_hte_directory_screen.dart';
-import 'admin_overview_screen.dart';
 import 'admin_profile_screen.dart';
+import 'admin_requirements_screen.dart';
+import 'desk/admin_announcements_desk.dart';
+import 'desk/admin_dashboard_desk.dart';
+import 'desk/admin_documents_desk.dart';
+import 'desk/admin_faculty_desk.dart';
+import 'desk/admin_hte_directory_desk.dart';
 
-class _AdminSection {
-  final String label;
-  final IconData icon;
+// Page indexes.
+const _dashboard = 0;
+const _hteDirectory = 1;
+const _faculty = 2;
+const _requirements = 3;
+const _announcements = 4;
+const _archive = 5;
+const _profile = 6;
 
-  const _AdminSection(this.label, this.icon);
-}
-
-const _sections = [
-  _AdminSection('Overview', Icons.dashboard_outlined),
-  _AdminSection('Class Management', Icons.class_outlined),
-  _AdminSection('HTE Directory', Icons.apartment_outlined),
-  _AdminSection('Announcements', Icons.campaign_outlined),
-  _AdminSection('Archive', Icons.archive_outlined),
-  _AdminSection('Profile', Icons.account_circle_outlined),
+/// Sidebar layout from the TrackIT admin mockups. Management groups the HTE
+/// Directory, Faculty and Documents (the Official Requirements list, which
+/// only the Admin manages -- System Revisions item 15).
+const _entries = [
+  SidebarEntry.page(Icons.grid_view_outlined, 'Dashboard', _dashboard),
+  SidebarEntry.group(Icons.business_center_outlined, 'Management', [
+    SidebarEntry.page(Icons.apartment_outlined, 'HTE Directory', _hteDirectory),
+    SidebarEntry.page(Icons.groups_outlined, 'Faculty', _faculty),
+    SidebarEntry.page(Icons.description_outlined, 'Documents', _requirements),
+  ]),
+  SidebarEntry.page(Icons.campaign_outlined, 'Announcements', _announcements),
+  SidebarEntry.page(Icons.inventory_2_outlined, 'Archive', _archive),
+  SidebarEntry.page(Icons.person_outline, 'Profile', _profile),
 ];
 
-// Below this width there's no room for a 250px-wide sidebar sitting next
-// to real content -- the sidebar becomes a Drawer instead.
-const _wideBreakpoint = 900.0;
+const _titles = [
+  'Dashboard',
+  'HTE Directory',
+  'Faculty',
+  'Documents',
+  'Announcements',
+  'Archive',
+  'Profile',
+];
 
-/// Admin's shell is a left sidebar (web-first, per the mockup) rather than
-/// the bottom nav every other role uses -- Admin is explicitly a web
-/// surface, so this is a deliberate, one-off departure from the shared
-/// AppBottomNav pattern, not an inconsistency. On a narrow viewport
-/// (phone, or a resized browser window) it falls back to a Drawer + AppBar
-/// so the sidebar doesn't just overflow the screen.
+/// The Admin web shell: the TrackIT sidebar next to the page. On a narrow
+/// window the sidebar becomes a Drawer.
 class AdminShell extends StatefulWidget {
   final ApiClient client;
   final AdminProfile initialProfile;
@@ -52,32 +66,23 @@ class AdminShell extends StatefulWidget {
 }
 
 class _AdminShellState extends State<AdminShell> {
-  // Overview -- the Sections/Faculty dashboard that used to live under
-  // Class Management -- is now the default landing section.
-  int _index = 0;
-  // Mutable so Edit Profile's changes (name, email, avatar) show up
-  // immediately across the shell -- the sidebar card -- instead of only
-  // after the next full login.
+  int _index = _dashboard;
   late AdminProfile _admin = widget.initialProfile;
 
-  void _updateAdmin(AdminProfile profile) {
-    setState(() => _admin = profile);
-  }
+  void _updateAdmin(AdminProfile profile) => setState(() => _admin = profile);
 
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Log Out'),
-        content: const Text('Are you sure you want to log out?'),
+        title: const Text('Log out?'),
+        content: const Text('You will need to sign in again to use TrackIT.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Log Out'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryMaroon, foregroundColor: Colors.white),
+            child: const Text('Log out'),
           ),
         ],
       ),
@@ -85,220 +90,70 @@ class _AdminShellState extends State<AdminShell> {
     if (confirmed == true) widget.onLoggedOut();
   }
 
-  Widget _buildSidebarContent({required bool closeDrawerOnTap}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 22, 20, 18),
-          child: Row(
-            children: [
-              _LogoMark(),
-              SizedBox(width: 10),
-              Text(
-                'TrackIT',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.white24,
-                backgroundImage: _admin.avatarUrl != null
-                    ? NetworkImage(ApiClient.resolveUrl(_admin.avatarUrl!))
-                    : null,
-                child: _admin.avatarUrl == null
-                    ? const Icon(Icons.person, color: Colors.white, size: 20)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _admin.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const Text(
-                      'Administrator',
-                      style: TextStyle(color: Colors.white70, fontSize: 11.5),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        for (var i = 0; i < _sections.length; i++)
-          _SidebarItem(
-            icon: _sections[i].icon,
-            label: _sections[i].label,
-            selected: _index == i,
-            onTap: () {
-              setState(() => _index = i);
-              if (closeDrawerOnTap) Navigator.of(context).pop();
-            },
-          ),
-        const Spacer(),
-        const Divider(color: Colors.white24, height: 1),
-        _SidebarItem(
-          icon: Icons.logout,
-          label: 'Log Out',
-          selected: false,
-          onTap: () {
-            if (closeDrawerOnTap) Navigator.of(context).pop();
-            _confirmLogout();
-          },
-        ),
-        const SizedBox(height: 12),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [
-      AdminOverviewScreen(client: widget.client, adminName: _admin.name),
-      AdminClassManagementScreen(client: widget.client),
-      AdminHteDirectoryScreen(client: widget.client),
-      AdminAnnouncementsScreen(client: widget.client),
-      AdminArchiveScreen(client: widget.client),
-      AdminProfileScreen(
-        client: widget.client,
-        admin: _admin,
-        onProfileUpdated: _updateAdmin,
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= _wideBreakpoint;
-        if (isWide) {
-          return Scaffold(
-            backgroundColor: AppColors.background,
-            body: Row(
-              children: [
-                Container(
-                  width: 250,
-                  color: AppColors.primaryMaroon,
-                  child: SafeArea(
-                    child: _buildSidebarContent(closeDrawerOnTap: false),
-                  ),
-                ),
-                Expanded(
-                  child: SafeArea(
-                    left: false,
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: IndexedStack(index: _index, children: pages),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          appBar: AppBar(
-            backgroundColor: AppColors.primaryMaroon,
-            foregroundColor: Colors.white,
-            title: Text(_sections[_index].label),
-          ),
-          drawer: Drawer(
-            backgroundColor: AppColors.primaryMaroon,
-            child: SafeArea(child: _buildSidebarContent(closeDrawerOnTap: true)),
-          ),
-          body: Padding(
-            padding: const EdgeInsets.all(12),
-            child: IndexedStack(index: _index, children: pages),
-          ),
-        );
+  Widget _sidebar({bool inDrawer = false}) {
+    return TrackitSidebar(
+      entries: _entries,
+      selectedIndex: _index,
+      onSelect: (i) {
+        setState(() => _index = i);
+        if (inDrawer) Navigator.of(context).pop();
+      },
+      accountName: _admin.name,
+      accountRole: 'SIPP Coordinator',
+      accountImage: _admin.avatarUrl != null
+          ? NetworkImage(ApiClient.resolveUrl(_admin.avatarUrl!))
+          : const AssetImage('assets/images/ccst_seal.webp') as ImageProvider,
+      onLogout: () {
+        if (inDrawer) Navigator.of(context).pop();
+        _confirmLogout();
       },
     );
   }
-}
-
-class _LogoMark extends StatelessWidget {
-  const _LogoMark();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
+    // Older pages (Official Requirements, Archive) keep their own layout,
+    // padded onto the warm page background.
+    Widget padded(Widget child) => DeskBackdrop(
+          child: Padding(padding: const EdgeInsets.fromLTRB(28, 28, 28, 20), child: child),
+        );
+    final pages = [
+      AdminDashboardDesk(
+        client: widget.client,
+        adminName: _admin.name,
+        onOpenHteDirectory: () => setState(() => _index = _hteDirectory),
       ),
-    );
-  }
-}
+      AdminHteDirectoryDesk(client: widget.client),
+      AdminFacultyDesk(client: widget.client),
+      // Wide screens get the Documents page; narrow ones keep the list view.
+      isDeskLayout(context)
+          ? AdminDocumentsDesk(client: widget.client)
+          : padded(AdminRequirementsScreen(client: widget.client)),
+      AdminAnnouncementsDesk(client: widget.client),
+      padded(AdminArchiveScreen(client: widget.client)),
+      AdminProfileScreen(client: widget.client, admin: _admin, onProfileUpdated: _updateAdmin),
+    ];
+    final body = IndexedStack(index: _index, children: pages);
 
-class _SidebarItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _SidebarItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Material(
-        color: selected ? Colors.white.withValues(alpha: 0.16) : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: selected ? Colors.white : Colors.white70,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontSize: 13.5,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= kDeskBreakpoint) {
+          return Scaffold(
+            backgroundColor: DeskColors.page,
+            body: Row(children: [_sidebar(), Expanded(child: body)]),
+          );
+        }
+        return Scaffold(
+          backgroundColor: DeskColors.page,
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF5C1219),
+            foregroundColor: Colors.white,
+            title: Text(_titles[_index]),
           ),
-        ),
-      ),
+          drawer: Drawer(child: _sidebar(inDrawer: true)),
+          body: body,
+        );
+      },
     );
   }
 }

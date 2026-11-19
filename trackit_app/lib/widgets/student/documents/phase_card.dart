@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
+import '../../../models/ojt_requirement_doc.dart';
 import '../../../models/ojt_requirement_phase.dart';
-import '../../../utils/app_colors.dart';
-import '../../common/status_badge.dart';
+import '../student_ui.dart';
+
+/// Status pill for a requirement phase: Approved / Re-Upload / Pending /
+/// Locked (TrackIT student mockup).
+StudentStatusPill phaseStatusPill(OjtRequirementPhase phase) {
+  if (phase.status == PhaseStatus.completed) {
+    return const StudentStatusPill(label: 'Approved', background: Color(0xFFD3EBD7), foreground: Color(0xFF2E7D45));
+  }
+  if (phase.status == PhaseStatus.locked) {
+    return const StudentStatusPill(label: 'Locked', background: Color(0xFFCFCFCF), foreground: Color(0xFF3A3A3A));
+  }
+  if (phase.documents.any((d) => d.status == RequirementDocStatus.rejected)) {
+    return const StudentStatusPill(label: 'Re-Upload', background: Color(0xFFF6D9DB), foreground: Color(0xFF8C1C2A));
+  }
+  return const StudentStatusPill(label: 'Pending', background: Color(0xFFFCEBC4), foreground: Color(0xFFD9822B));
+}
 
 class PhaseCard extends StatelessWidget {
   final OjtRequirementPhase phase;
@@ -9,91 +24,45 @@ class PhaseCard extends StatelessWidget {
 
   const PhaseCard({super.key, required this.phase, required this.onTap});
 
-  StatusKind get _statusKind {
-    switch (phase.status) {
-      case PhaseStatus.locked:
-        return StatusKind.locked;
-      case PhaseStatus.inProgress:
-        return StatusKind.inProgress;
-      case PhaseStatus.completed:
-        return StatusKind.completed;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isLocked = phase.status == PhaseStatus.locked;
-
-    return Opacity(
-      opacity: isLocked ? 0.6 : 1,
-      child: Material(
-        color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(18),
-        elevation: 1,
-        shadowColor: Colors.black.withValues(alpha: 0.05),
-        child: InkWell(
-          onTap: isLocked ? null : onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primaryMaroon,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: isLocked
-                      ? const Icon(Icons.lock, color: Colors.white, size: 16)
-                      : Text(
-                          '${phase.order}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+    final locked = phase.status == PhaseStatus.locked;
+    return StudentCard(
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: PhaseNumber(number: phase.order, locked: locked),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: Text(phase.title, style: studentSerif(size: 24, weight: FontWeight.w600)),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              phase.title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                          StatusBadge(kind: _statusKind),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        phase.description,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!isLocked)
-                  const Icon(Icons.chevron_right, color: AppColors.textSecondary),
-              ],
-            ),
+              ),
+              phaseStatusPill(phase),
+            ],
           ),
-        ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  phase.description,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF2B2B2B)),
+                ),
+              ),
+              Icon(locked ? Icons.lock_outline : Icons.chevron_right, color: const Color(0xFF3A3A3A)),
+            ],
+          ),
+        ],
       ),
     );
   }

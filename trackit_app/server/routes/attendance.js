@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { computeProgressStatus } = require('../utils/progressStatus');
+const { getCreditedHours } = require('../utils/creditedHours');
 const { notifyInstructorForStudent } = require('../utils/notifyInstructor');
 const { todayInManila } = require('../utils/manilaTime');
 
@@ -208,9 +209,8 @@ router.get('/history', async (req, res) => {
   }
 });
 
-// Completed hours, days attended, and hour averages are computed here
-// from attendance_records rather than stored redundantly (see the
-// comment in schema.sql).
+// Credited hours = approved weekly DTR submissions only (see
+// utils/creditedHours.js). Clock in/out no longer contributes.
 router.get('/progress', async (req, res) => {
   try {
     const studentResult = await pool.query(
@@ -222,29 +222,10 @@ router.get('/progress', async (req, res) => {
     }
     const requiredHours = Number(studentResult.rows[0].required_hours);
 
-    const totals = await pool.query(
-      `SELECT
-         COUNT(*) FILTER (WHERE clock_out IS NOT NULL) AS days_attended,
-         COALESCE(SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600.0)
-           FILTER (WHERE clock_out IS NOT NULL), 0) AS completed_hours,
-         MAX(work_date) FILTER (WHERE clock_out IS NOT NULL) AS last_attendance_date
-       FROM attendance_records
-       WHERE student_id = $1`,
-      [req.studentId],
-    );
-    const daysAttended = Number(totals.rows[0].days_attended);
-    const completedHours = Number(totals.rows[0].completed_hours);
-    const lastAttendanceDate = totals.rows[0].last_attendance_date;
-
-    const weekly = await pool.query(
-      `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600.0), 0) AS weekly_hours
-       FROM attendance_records
-       WHERE student_id = $1 AND clock_out IS NOT NULL
-         AND work_date >= (CURRENT_DATE - INTERVAL '7 days')`,
-      [req.studentId],
-    );
-    const weeklyAverageHours = Number(weekly.rows[0].weekly_hours);
-    const averageHoursPerDay = daysAttended > 0 ? completedHours / daysAttended : 0;
+    const hours = await getCreditedHours(req.studentId);
+    const { completedHours, pendingHours, approvedWeeks } = hours;
+    const weeklyAverageHours = approvedWeeks > 0 ? completedHours / approvedWeeks : 0;
+    const averageHoursPerDay = weeklyAverageHours / 5;
 
     const profileResult = await pool.query(
       'SELECT ojt_start_date FROM student_profiles WHERE student_id = $1',
@@ -254,9 +235,10 @@ router.get('/progress', async (req, res) => {
 
     const status = computeProgressStatus({
       completedHours,
+      pendingHours,
       requiredHours,
       ojtStartDate,
-      lastAttendanceDate,
+      lastActivityDate: hours.lastSubmittedWeekEnd,
     });
 
     res.json({
@@ -264,7 +246,11 @@ router.get('/progress', async (req, res) => {
       progress: {
         completedHours,
         totalHours: requiredHours,
-        daysAttended,
+        pendingHours,
+        approvedWeeks,
+        // Kept for the current app build until the student screens are
+        // reworked; now counts approved weeks, not clocked-in days.
+        daysAttended: approvedWeeks,
         averageHoursPerDay,
         weeklyAverageHours,
         status,

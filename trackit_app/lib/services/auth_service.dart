@@ -9,6 +9,17 @@ class AuthResult {
   const AuthResult({required this.token, required this.student});
 }
 
+/// Either a logged-in session ([auth]) or a request now waiting for the
+/// instructor's approval ([pendingMessage]).
+class RegisterResult {
+  final AuthResult? auth;
+  final String? pendingMessage;
+
+  const RegisterResult({this.auth, this.pendingMessage});
+
+  bool get isPending => auth == null;
+}
+
 class AuthService {
   final ApiClient client;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -38,13 +49,18 @@ class AuthService {
   /// [activationCode] joins a class (see [lookupClass]) -- it's what sets
   /// course, section, and adviser together, rather than the student
   /// free-typing course/section or picking an adviser separately.
-  Future<AuthResult> register({
+  ///
+  /// A new registration waits for the section instructor's approval, so
+  /// it returns [RegisterResult.pendingMessage] and no session. Only
+  /// claiming an account the Admin pre-imported logs in right away.
+  Future<RegisterResult> register({
     required String name,
     required String email,
     required String password,
     required String activationCode,
     String? studentNumber,
     String? yearLevel,
+    String? phone,
   }) async {
     final response = await client.post(
       '/api/auth/register',
@@ -55,9 +71,13 @@ class AuthService {
         'activationCode': activationCode,
         if (studentNumber != null) 'studentNumber': studentNumber,
         if (yearLevel != null) 'yearLevel': yearLevel,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
       },
     );
-    return _persistAuthResponse(response);
+    if (response['pending'] == true) {
+      return RegisterResult(pendingMessage: response['message'] as String?);
+    }
+    return RegisterResult(auth: await _persistAuthResponse(response));
   }
 
   Future<AuthResult> login({required String email, required String password}) async {

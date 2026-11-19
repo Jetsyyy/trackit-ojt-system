@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/student/student_ui.dart';
 import '../../../models/student_profile.dart';
 import '../../../services/api_client.dart';
 import '../../../services/student_profile_service.dart';
@@ -82,7 +83,7 @@ class _ProfileTabNavigatorState extends State<ProfileTabNavigator> {
                 onLoggedOut: widget.onLoggedOut,
               );
           }
-          return MaterialPageRoute(builder: (_) => page, settings: settings);
+          return MaterialPageRoute(builder: (_) => StudentBackdrop(child: page), settings: settings);
         },
       ),
     );

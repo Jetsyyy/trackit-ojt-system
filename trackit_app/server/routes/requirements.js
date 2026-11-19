@@ -43,13 +43,17 @@ router.get('/', async (req, res) => {
         .filter((t) => t.phase_id === phase.id)
         .map((template) => {
           const submission = submissionsByTemplate.get(template.id);
+          // Office-issued requirements (System Revisions item 6) never
+          // expose a template: the student gets them from that office.
+          const issuedBy = template.issued_by || null;
           return {
             id: template.id,
             name: template.name,
             description: template.description,
-            hasTemplate: template.has_template,
-            templateUrl: template.template_url,
-            templateName: template.template_name,
+            issuedBy,
+            hasTemplate: issuedBy ? false : template.has_template && !!template.template_url,
+            templateUrl: issuedBy ? null : template.template_url,
+            templateName: issuedBy ? null : template.template_name,
             status: submission ? submission.status : 'missing',
             uploadedFileName: submission ? submission.uploaded_file_name : null,
             uploadedFileUrl: submission ? submission.uploaded_file_url : null,
@@ -92,6 +96,48 @@ router.get('/', async (req, res) => {
 
 // Real multipart file upload -- the JSON { fileName } fallback stays as a
 // defensive no-op path, but the Flutter app always sends real file bytes.
+// Final Documents: the student confirms the final (physical) documents
+// are complete. Saved once with a timestamp and the instructor is told.
+router.get('/final-ready', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT final_documents_ready_at FROM student_profiles WHERE student_id = $1',
+      [req.studentId],
+    );
+    res.json({ success: true, readyAt: result.rows[0]?.final_documents_ready_at || null });
+  } catch (error) {
+    console.error('Get final documents ready error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load.' });
+  }
+});
+
+router.post('/final-ready', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE student_profiles
+       SET final_documents_ready_at = COALESCE(final_documents_ready_at, now()), updated_at = now()
+       WHERE student_id = $1
+       RETURNING final_documents_ready_at`,
+      [req.studentId],
+    );
+    const readyAt = result.rows[0]?.final_documents_ready_at || null;
+    try {
+      const student = await pool.query('SELECT name FROM students WHERE id = $1', [req.studentId]);
+      await notifyInstructorForStudent(req.studentId, {
+        title: 'Final Documents Ready',
+        message: `${student.rows[0]?.name || 'A student'} says all final documents are ready for your review and confirmation.`,
+        relatedModule: 'requirements',
+      });
+    } catch (notifyError) {
+      console.error('Final documents ready notification not sent:', notifyError.message);
+    }
+    res.json({ success: true, readyAt });
+  } catch (error) {
+    console.error('Final documents ready error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send.' });
+  }
+});
+
 router.post('/:templateId/submit', upload.single('file'), async (req, res) => {
   try {
     const templateId = Number(req.params.templateId);

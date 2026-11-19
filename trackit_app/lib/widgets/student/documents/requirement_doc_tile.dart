@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../../models/ojt_requirement_doc.dart';
-import '../../../utils/app_colors.dart';
-import '../../common/status_badge.dart';
+import '../../../utils/ph_time.dart';
+import '../student_ui.dart';
 
+/// One requirement document (TrackIT student mockup "Document State"):
+/// icon, name and description; the uploaded file and when; the actions
+/// (Download Template / Upload / Re-Upload / View); and a colored bar at
+/// the bottom with the review result.
 class RequirementDocTile extends StatelessWidget {
   final OjtRequirementDoc document;
   final VoidCallback onUpload;
@@ -18,180 +21,199 @@ class RequirementDocTile extends StatelessWidget {
     this.onDownloadTemplate,
   });
 
-  StatusKind get _statusKind {
-    switch (document.status) {
-      case RequirementDocStatus.missing:
-        return StatusKind.missing;
-      case RequirementDocStatus.pending:
-        return StatusKind.pending;
-      case RequirementDocStatus.submitted:
-        return StatusKind.submitted;
-      case RequirementDocStatus.approved:
-        return StatusKind.approved;
-      case RequirementDocStatus.rejected:
-        return StatusKind.rejected;
-    }
+  @override
+  Widget build(BuildContext context) {
+    final d = document;
+    final hasFile = d.uploadedFileName != null &&
+        (d.status == RequirementDocStatus.submitted ||
+            d.status == RequirementDocStatus.approved ||
+            d.status == RequirementDocStatus.rejected);
+    final (barText, barColor) = switch (d.status) {
+      RequirementDocStatus.approved => ('Document Approved', StudentColors.approved),
+      RequirementDocStatus.rejected => ('Re-Upload File  |  Declined', StudentColors.declined),
+      RequirementDocStatus.submitted || RequirementDocStatus.pending => ('Pending for Verification', StudentColors.pending),
+      RequirementDocStatus.missing => (null, null),
+    };
+    final canUpload = d.status == RequirementDocStatus.missing || d.status == RequirementDocStatus.rejected;
+    final officeIssued = d.issuedBy != null && d.issuedBy!.trim().isNotEmpty;
+
+    final buttons = <Widget>[
+      // A declined document shows only Re-Upload and View (mockup).
+      if (onDownloadTemplate != null && d.status != RequirementDocStatus.rejected)
+        _ActionButton(icon: Icons.download, label: 'Download Template', onTap: onDownloadTemplate),
+      if (canUpload)
+        _ActionButton(
+          icon: Icons.upload,
+          label: d.status == RequirementDocStatus.rejected ? 'Re-Upload' : 'Upload',
+          onTap: onUpload,
+          danger: d.status == RequirementDocStatus.rejected,
+        ),
+      if (hasFile) _ActionButton(icon: Icons.visibility_outlined, label: 'View', onTap: onView, view: true),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 5, offset: Offset(0, 2))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFF555555)),
+                        ),
+                        child: const Icon(Icons.description, size: 22, color: Color(0xFF1F1F1F)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(d.name, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w500)),
+                            Text(
+                              officeIssued ? '${d.description.isEmpty ? '' : '${d.description} · '}From the ${d.issuedBy}' : d.description,
+                              style: const TextStyle(fontSize: 11, color: StudentColors.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (hasFile)
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(border: Border.all(color: const Color(0xFF9A9A9A))),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.image_outlined, size: 12, color: Color(0xFF555555)),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    d.uploadedFileName!,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 9.5, color: Color(0xFF333333)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (d.submittedAt != null) ...[
+                          Text(
+                            formatPh(d.submittedAt!, 'MMMM d, yyyy - hh:mm a'),
+                            style: const TextStyle(fontSize: 9, color: Color(0xFF555555)),
+                          ),
+                          const SizedBox(width: 3),
+                          const Icon(Icons.access_time, size: 11, color: Color(0xFF555555)),
+                        ],
+                      ],
+                    ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(height: 1, color: Color(0xFF3A3A3A)),
+                  ),
+                  if (d.status == RequirementDocStatus.rejected && d.remarks != null && d.remarks!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Instructor note: ${d.remarks}',
+                        style: const TextStyle(fontSize: 11, color: StudentColors.declined, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  if (buttons.isEmpty)
+                    Text(
+                      officeIssued
+                          ? 'Get this document from the ${d.issuedBy}, then upload it here.'
+                          : 'No file needed yet.',
+                      style: const TextStyle(fontSize: 11, color: StudentColors.muted),
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < buttons.length; i++) ...[
+                          if (i > 0)
+                            Container(
+                              width: 2,
+                              height: 26,
+                              margin: const EdgeInsets.symmetric(horizontal: 10),
+                              color: const Color(0xFF1F1F1F),
+                            ),
+                          // Shrink to fit rather than cutting labels off.
+                          Flexible(child: FittedBox(fit: BoxFit.scaleDown, child: buttons[i])),
+                        ],
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            if (barText != null)
+              Container(
+                color: barColor,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                alignment: Alignment.center,
+                child: Text(
+                  barText,
+                  style: const TextStyle(color: Colors.white, fontSize: 11.5, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool view;
+  final bool danger;
+
+  const _ActionButton({required this.icon, required this.label, required this.onTap, this.view = false, this.danger = false});
 
   @override
   Widget build(BuildContext context) {
-    final hasFile = document.status != RequirementDocStatus.missing;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  document.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              StatusBadge(kind: _statusKind),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            document.description,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          if (document.deadline != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Deadline: ${DateFormat('MMM d, yyyy').format(document.deadline!)}',
-              style: const TextStyle(
-                color: AppColors.statOrangeIcon,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (hasFile && document.uploadedFileName != null) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(
-                  Icons.attach_file,
-                  size: 14,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    document.uploadedFileName!,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            if (document.submittedAt != null) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.schedule,
-                    size: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Submitted ${DateFormat('MMM d, yyyy h:mm a').format(document.submittedAt!.toLocal())}',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-          if (document.remarks != null && document.remarks!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.statRedBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.comment_outlined,
-                    size: 14,
-                    color: AppColors.statRedIcon,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Remarks: ${document.remarks}',
-                      style: const TextStyle(
-                        color: AppColors.statRedIcon,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: onUpload,
-                icon: Icon(hasFile ? Icons.refresh : Icons.upload_file, size: 16),
-                label: Text(hasFile ? 'Replace' : 'Upload'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primaryMaroon,
-                  side: const BorderSide(color: AppColors.primaryMaroon),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              if (hasFile)
-                OutlinedButton.icon(
-                  onPressed: onView,
-                  icon: const Icon(Icons.visibility_outlined, size: 16),
-                  label: const Text('View'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.statBlueIcon,
-                    side: const BorderSide(color: AppColors.statBlueIcon),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              if (document.templateUrl != null)
-                OutlinedButton.icon(
-                  onPressed: onDownloadTemplate,
-                  icon: const Icon(Icons.download_outlined, size: 16),
-                  label: const Text('Download Template'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textSecondary,
-                    side: const BorderSide(color: AppColors.chipGrayBg),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-            ],
-          ),
-        ],
+    final fg = view
+        ? const Color(0xFF6B9BD1)
+        : danger
+            ? StudentColors.declined
+            : const Color(0xFF1F1F1F);
+    final bg = view ? const Color(0xFFE3ECF7) : (danger ? const Color(0xFFF6E3E4) : Colors.white);
+    return SizedBox(
+      height: 28,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 14),
+        label: Text(label, style: const TextStyle(fontSize: 11)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: fg,
+          backgroundColor: bg,
+          side: BorderSide(color: view ? const Color(0xFF9DBBE0) : (danger ? StudentColors.declined : const Color(0xFF555555))),
+          padding: EdgeInsets.symmetric(horizontal: view ? 20 : 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+        ),
       ),
     );
   }

@@ -8,6 +8,17 @@ class InstructorAuthResult {
   const InstructorAuthResult({required this.token, required this.instructor});
 }
 
+/// Either a logged-in session ([auth]) or an account request now waiting
+/// for the Admin ([pendingMessage]).
+class InstructorRegisterResult {
+  final InstructorAuthResult? auth;
+  final String? pendingMessage;
+
+  const InstructorRegisterResult({this.auth, this.pendingMessage});
+
+  bool get isPending => auth == null;
+}
+
 class InstructorAuthService {
   final ApiClient client;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -22,20 +33,41 @@ class InstructorAuthService {
     return token;
   }
 
-  /// Claims the account an Admin already created for this instructor
-  /// (see Faculty/Instructors -> Add Instructor) -- there's no free
-  /// self-registration anymore, only activating a pre-created row with
-  /// its Instructor Activation Code.
-  Future<InstructorAuthResult> register({
+  /// Two kinds of code work here:
+  /// - An Instructor Registration Code (INS-...) the Admin generated: the
+  ///   instructor sends their own details, and the account waits for the
+  ///   Admin's approval and section assignment ([InstructorRegisterResult.pendingMessage]).
+  /// - The activation code of an account the Admin already created
+  ///   (FAC-...): only a password is needed and it logs in right away.
+  Future<InstructorRegisterResult> register({
     required String activationCode,
     required String password,
+    String? name,
+    String? email,
+    String? phone,
+    String? instructorNumber,
   }) async {
     final response = await client.post(
       '/api/instructor-auth/register',
-      body: {'activationCode': activationCode, 'password': password},
+      body: {
+        'activationCode': activationCode,
+        'password': password,
+        'name': ?name,
+        'email': ?email,
+        'phone': ?phone,
+        'instructorNumber': ?instructorNumber,
+      },
     );
-    return _persistAuthResponse(response);
+    if (response['pending'] == true) {
+      return InstructorRegisterResult(pendingMessage: response['message'] as String?);
+    }
+    return InstructorRegisterResult(auth: await _persistAuthResponse(response));
   }
+
+  /// True for an Admin-generated Instructor Registration Code, which
+  /// needs the instructor's own details.
+  static bool isRegistrationCode(String code) =>
+      code.trim().toUpperCase().startsWith('INS-');
 
   Future<InstructorAuthResult> login({
     required String email,

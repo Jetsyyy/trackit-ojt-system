@@ -10,6 +10,55 @@ abstract class AdminArchiveService {
   Future<ArchiveClassDetail> getClassDetail(int classId);
 
   Future<RawFileResponse> exportYear(String year, {required String format});
+
+  /// The active academic year and whether it can be archived.
+  Future<ArchiveStatus> getStatus();
+
+  /// Archives the active year (System Revisions item 20) after the Admin
+  /// re-enters their email and password; the next year becomes active.
+  Future<ArchiveResult> archiveActiveYear({required String email, required String password});
+
+  Future<List<HteSnapshotSummary>> getHteSnapshots();
+
+  Future<RawFileResponse> downloadHteSnapshot(String year, {required String format});
+}
+
+class ArchiveStatus {
+  final String? activeYear;
+  final String? nextYear;
+  final bool alreadyArchived;
+
+  const ArchiveStatus({this.activeYear, this.nextYear, required this.alreadyArchived});
+}
+
+class ArchiveResult {
+  final String archivedYear;
+  final String activeYear;
+  final int companies;
+  final int students;
+
+  const ArchiveResult({
+    required this.archivedYear,
+    required this.activeYear,
+    required this.companies,
+    required this.students,
+  });
+}
+
+class HteSnapshotSummary {
+  final String academicYear;
+  final DateTime archivedAt;
+  final String? archivedBy;
+  final int companies;
+  final int students;
+
+  const HteSnapshotSummary({
+    required this.academicYear,
+    required this.archivedAt,
+    this.archivedBy,
+    required this.companies,
+    required this.students,
+  });
 }
 
 class HttpAdminArchiveService implements AdminArchiveService {
@@ -51,6 +100,56 @@ class HttpAdminArchiveService implements AdminArchiveService {
     final uri = Uri(
       path: '/api/admin/archive/export',
       queryParameters: {'year': year, 'format': format},
+    );
+    return client.getBytes(uri.toString());
+  }
+
+  @override
+  Future<ArchiveStatus> getStatus() async {
+    final response = await client.get('/api/admin/archive/status');
+    return ArchiveStatus(
+      activeYear: response['activeYear'] as String?,
+      nextYear: response['nextYear'] as String?,
+      alreadyArchived: response['alreadyArchived'] as bool? ?? false,
+    );
+  }
+
+  @override
+  Future<ArchiveResult> archiveActiveYear({required String email, required String password}) async {
+    final response = await client.post(
+      '/api/admin/archive/academic-year',
+      body: {'email': email, 'password': password},
+    );
+    final totals = response['totals'] as Map<String, dynamic>? ?? const {};
+    return ArchiveResult(
+      archivedYear: response['archivedYear'] as String,
+      activeYear: response['activeYear'] as String,
+      companies: (totals['companiesWithStudents'] as num? ?? 0).toInt(),
+      students: (totals['students'] as num? ?? 0).toInt(),
+    );
+  }
+
+  @override
+  Future<List<HteSnapshotSummary>> getHteSnapshots() async {
+    final response = await client.get('/api/admin/archive/hte-snapshots');
+    return (response['snapshots'] as List<dynamic>).map((row) {
+      final r = row as Map<String, dynamic>;
+      final totals = r['totals'] as Map<String, dynamic>? ?? const {};
+      return HteSnapshotSummary(
+        academicYear: r['academicYear'] as String,
+        archivedAt: DateTime.parse(r['archivedAt'] as String).toLocal(),
+        archivedBy: r['archivedBy'] as String?,
+        companies: (totals['companiesWithStudents'] as num? ?? 0).toInt(),
+        students: (totals['students'] as num? ?? 0).toInt(),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<RawFileResponse> downloadHteSnapshot(String year, {required String format}) {
+    final uri = Uri(
+      path: '/api/admin/archive/hte-snapshots/$year',
+      queryParameters: {'format': format},
     );
     return client.getBytes(uri.toString());
   }
