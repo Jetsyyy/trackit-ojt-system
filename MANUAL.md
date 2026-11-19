@@ -400,8 +400,10 @@ lives in `trackit_app/vercel.json`, `trackit_app/vercel/*.sh` and
 
 **Uploaded files.** Vercel wipes the server's disk, so uploads (requirement
 documents, weekly DTR/AR files, avatars, templates, announcement images) go
-to **Vercel Blob** whenever `BLOB_READ_WRITE_TOKEN` is set
-(`server/utils/storage.js`). Without it, as on a local computer, they are
+to **Vercel Blob** whenever the project has a Blob store connected
+(`server/utils/storage.js`). Newer stores sign in with `BLOB_STORE_ID` plus a
+per-request token Vercel issues automatically; older ones use
+`BLOB_READ_WRITE_TOKEN`. Either works. Without it, as on a local computer, they are
 saved under `server/uploads` as before.
 
 **One-time setup**
@@ -413,7 +415,7 @@ saved under `server/uploads` as before.
    values as `trackit_app/.env`). Add the mail settings too if email is
    used.
 4. Deploy. Then **Storage → Create → Blob**, connect it to the project
-   (this adds `BLOB_READ_WRITE_TOKEN`), and **Redeploy**.
+   (Production and Preview), and **Redeploy**.
 5. Move the files already uploaded on your computer into Blob (run once,
    from `trackit_app/server`, with `BLOB_READ_WRITE_TOKEN` copied from the
    Blob store's `.env.local` tab into `trackit_app/.env`):
