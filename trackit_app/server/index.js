@@ -110,6 +110,18 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/announcements', announcementsRoutes);
 app.use('/api/profile', profileRoutes);
 
+// Errors no route handled (e.g. an upload that could not be stored) come
+// back as JSON the app can show, instead of Express's HTML error page.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('Unhandled request error:', req.method, req.originalUrl, err);
+  const tooLarge = err && err.code === 'LIMIT_FILE_SIZE';
+  res.status(tooLarge ? 413 : err.status || 500).json({
+    success: false,
+    message: tooLarge ? 'That file is too large.' : (err && err.message) || 'Something went wrong.',
+  });
+});
+
 // Vercel imports the app (api/index.js); `npm start` runs it directly.
 if (require.main === module) {
   app.listen(PORT, () => {

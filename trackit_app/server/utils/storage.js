@@ -51,8 +51,19 @@ class UploadStorage {
         .catch(cb);
       return;
     }
+    if (process.env.VERCEL) {
+      // Vercel's disk is read-only: without a connected Blob store there is
+      // nowhere to keep the file.
+      cb(new Error('File storage is not set up: connect a Vercel Blob store to the project and redeploy.'));
+      return;
+    }
     const dir = path.join(UPLOAD_ROOT, this.folder);
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      cb(error);
+      return;
+    }
     const target = path.join(dir, name);
     const out = fs.createWriteStream(target);
     let size = 0;
