@@ -14,7 +14,19 @@ const path = require('path');
 const crypto = require('crypto');
 
 const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
-const useBlob = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+
+// The Blob store's key. Vercel names it BLOB_READ_WRITE_TOKEN unless a
+// custom prefix was chosen when connecting the store (e.g.
+// TRACKIT_FILES_READ_WRITE_TOKEN), so any *_READ_WRITE_TOKEN holding a
+// Blob key is accepted.
+function blobToken() {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.endsWith('_READ_WRITE_TOKEN') && String(value).startsWith('vercel_blob_rw_')) return value;
+  }
+  return null;
+}
+const useBlob = () => Boolean(blobToken());
 
 function uniqueName(originalName) {
   const ext = path.extname(originalName || '').toLowerCase();
@@ -45,6 +57,7 @@ class UploadStorage {
             access: 'public',
             contentType: file.mimetype,
             addRandomSuffix: true,
+            token: blobToken(),
           });
           cb(null, { filename: name, size: buffer.length, url: blob.url, path: null });
         })
@@ -54,7 +67,14 @@ class UploadStorage {
     if (process.env.VERCEL) {
       // Vercel's disk is read-only: without a connected Blob store there is
       // nowhere to keep the file.
-      cb(new Error('File storage is not set up: connect a Vercel Blob store to the project and redeploy.'));
+      // Names only (never values), to show which storage settings exist.
+      const related = Object.keys(process.env).filter((n) => /BLOB|STORE|READ_WRITE/i.test(n));
+      cb(
+        new Error(
+          'File storage is not set up: connect a Vercel Blob store to the project and redeploy.' +
+            ` (storage settings found: ${related.length ? related.join(', ') : 'none'})`,
+        ),
+      );
       return;
     }
     const dir = path.join(UPLOAD_ROOT, this.folder);
@@ -97,7 +117,7 @@ async function removeStored(url) {
     if (/^https?:\/\//.test(url)) {
       if (!useBlob()) return;
       const { del } = require('@vercel/blob');
-      await del(url);
+      await del(url, { token: blobToken() });
       return;
     }
     if (!url.startsWith('/uploads/')) return;
