@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
+const { uploadStorage } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { recordActivity, recentActivity } = require('../utils/accountActivity');
@@ -9,13 +10,7 @@ const { requireInstructorAuth } = require('../middleware/instructorAuth');
 const router = express.Router();
 router.use(requireInstructorAuth);
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', 'uploads', 'avatars'),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
+const storage = uploadStorage('avatars');
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -76,7 +71,7 @@ router.post('/avatar', upload.single('avatar'), async (req, res) => {
         .status(400)
         .json({ success: false, message: 'No image uploaded (jpg/png/webp only).' });
     }
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = req.file.url;
     await pool.query('UPDATE advisers SET photo_url = $1 WHERE id = $2', [
       avatarUrl,
       req.instructorId,

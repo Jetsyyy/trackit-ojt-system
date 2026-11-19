@@ -39,8 +39,9 @@ const profileRoutes = require('./routes/profile');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// multer's disk storage needs these to exist up front.
-for (const dir of [
+// Local uploads folders (on Vercel files go to Blob storage instead and
+// the disk is read-only -- see utils/storage.js).
+for (const dir of process.env.VERCEL ? [] : [
   'uploads/requirements',
   'uploads/requirements/templates',
   'uploads/avatars',
@@ -109,6 +110,11 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/announcements', announcementsRoutes);
 app.use('/api/profile', profileRoutes);
 
-app.listen(PORT, () => {
-  console.log(`TRACKIT server running on http://localhost:${PORT}`);
-});
+// Vercel imports the app (api/index.js); `npm start` runs it directly.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`TRACKIT server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

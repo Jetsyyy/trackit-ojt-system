@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
+const { uploadStorage, removeStored } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
@@ -15,7 +16,6 @@ const { loadWeekPlan, buildWeekList, summarize } = require('../utils/weeklySubmi
 const router = express.Router();
 router.use(requireAuth);
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'weekly');
 const MAX_FILES_PER_KIND = 5;
 const MAX_CLAIMED_HOURS = 168;
 
@@ -31,13 +31,7 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (req, file, cb) => {
-      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      cb(null, `${unique}${path.extname(file.originalname).toLowerCase()}`);
-    },
-  }),
+  storage: uploadStorage('weekly'),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(null, true);
@@ -68,11 +62,7 @@ function uploadedFiles(req) {
 // Rejected requests must not leave orphaned uploads behind.
 function discardUploads(req) {
   for (const file of uploadedFiles(req)) {
-    fs.unlink(file.path, (error) => {
-      if (error && error.code !== 'ENOENT') {
-        console.error('Discard weekly upload error:', file.path, error.message);
-      }
-    });
+    removeStored(file.url);
   }
 }
 
@@ -159,7 +149,7 @@ router.post('/:weekNumber/submit', uploadWeekFiles, async (req, res) => {
           await client.query(
             `INSERT INTO activity_report_attachments (activity_report_id, kind, file_name, file_url)
              VALUES ($1, $2, $3, $4)`,
-            [reportId, kind, file.originalname, `/uploads/weekly/${file.filename}`],
+            [reportId, kind, file.originalname, file.url],
           );
         }
       }
@@ -174,12 +164,7 @@ router.post('/:weekNumber/submit', uploadWeekFiles, async (req, res) => {
     // A resubmitted (previously rejected) week replaces its files; only
     // delete the old ones once the new submission is safely committed.
     for (const fileUrl of replacedFiles) {
-      if (!fileUrl.startsWith('/uploads/weekly/')) continue;
-      fs.unlink(path.join(UPLOAD_DIR, path.basename(fileUrl)), (error) => {
-        if (error && error.code !== 'ENOENT') {
-          console.error('Remove replaced weekly upload error:', fileUrl, error.message);
-        }
-      });
+      removeStored(fileUrl);
     }
 
     try {

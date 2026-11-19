@@ -37,10 +37,16 @@ class ApiException implements Exception {
 /// Thin wrapper around package:http that attaches the auth token, encodes
 /// JSON bodies, and turns non-2xx responses into [ApiException].
 class ApiClient {
-  // Flutter web / Chrome on the same machine as the server: localhost
-  // works as-is. Android emulator: use 10.0.2.2 instead of localhost.
-  // Physical device: use your machine's LAN IP.
-  static const String baseUrl = 'http://localhost:3000';
+  // Set at build time with --dart-define=API_BASE_URL=... .
+  // - Not set: http://localhost:3000 (Flutter web / Chrome on the same
+  //   machine as `npm start`). Android emulator: use 10.0.2.2 instead of
+  //   localhost; a physical device: your machine's LAN IP.
+  // - Set to an empty value (the Vercel build): the API is on the same
+  //   site as the app, so the page's own address is used.
+  static const String _configuredBaseUrl =
+      String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:3000');
+  static final String baseUrl =
+      _configuredBaseUrl.isEmpty ? Uri.base.origin : _configuredBaseUrl;
 
   String? _token;
 

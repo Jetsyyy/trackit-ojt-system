@@ -1,0 +1,2 @@
+# Vercel runs these on Linux; Windows line endings would break them.
+*.sh text eol=lf

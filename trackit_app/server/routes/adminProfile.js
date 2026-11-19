@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const { uploadStorage } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
@@ -16,13 +17,7 @@ const OTP_RESEND_COOLDOWN_SECONDS = 60;
 const OTP_MAX_ATTEMPTS = 5;
 const RESET_TOKEN_TTL_MINUTES = 5;
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', 'uploads', 'avatars'),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
+const storage = uploadStorage('avatars');
 const upload = multer({
   storage,
   limits: { fileSize: 2 * 1024 * 1024 },
@@ -81,7 +76,7 @@ router.patch('/', upload.single('avatar'), async (req, res) => {
       }
     }
 
-    const avatarUrl = req.file ? `/uploads/avatars/${req.file.filename}` : undefined;
+    const avatarUrl = req.file ? req.file.url : undefined;
 
     const result = await pool.query(
       `UPDATE admins

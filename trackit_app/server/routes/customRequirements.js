@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const { uploadStorage } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
@@ -9,13 +10,7 @@ const { requirementFileFilter } = require('../utils/requirementFileTypes');
 const router = express.Router();
 router.use(requireAuth);
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', 'uploads', 'requirements'),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
+const storage = uploadStorage('requirements');
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -73,7 +68,7 @@ router.post('/:requirementId/submit', upload.single('file'), async (req, res) =>
   try {
     const requirementId = Number(req.params.requirementId);
     const fileName = req.file ? req.file.originalname : req.body.fileName;
-    const fileUrl = req.file ? `/uploads/requirements/${req.file.filename}` : null;
+    const fileUrl = req.file ? req.file.url : null;
     if (!fileName) {
       return res.status(400).json({ success: false, message: 'No file provided.' });
     }

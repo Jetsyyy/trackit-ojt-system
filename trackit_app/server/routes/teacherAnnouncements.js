@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
+const { uploadStorage, removeStored } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireInstructorAuth } = require('../middleware/instructorAuth');
@@ -8,13 +9,7 @@ const { requireInstructorAuth } = require('../middleware/instructorAuth');
 const router = express.Router();
 router.use(requireInstructorAuth);
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', 'uploads', 'announcements'),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
+const storage = uploadStorage('announcements');
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -39,12 +34,7 @@ const SELECT_WITH_TARGETS = `
 
 function deleteImageFile(imageUrl) {
   if (!imageUrl) return;
-  const filePath = path.join(__dirname, '..', imageUrl.replace(/^\//, ''));
-  fs.unlink(filePath, (err) => {
-    if (err && err.code !== 'ENOENT') {
-      console.error('Failed to delete announcement image file:', err);
-    }
-  });
+  removeStored(imageUrl);
 }
 
 router.get('/', async (req, res) => {
@@ -91,7 +81,7 @@ router.post('/', upload.single('image'), async (req, res) => {
         .json({ success: false, message: 'One or more target sections are invalid.' });
     }
 
-    const imageUrl = req.file ? `/uploads/announcements/${req.file.filename}` : null;
+    const imageUrl = req.file ? req.file.url : null;
 
     const inserted = await pool.query(
       'INSERT INTO announcements (instructor_id, title, content, image_url) VALUES ($1, $2, $3, $4) RETURNING id',
@@ -164,7 +154,7 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
     let imageUrl = current.image_url;
     if (req.file) {
       deleteImageFile(current.image_url);
-      imageUrl = `/uploads/announcements/${req.file.filename}`;
+      imageUrl = req.file.url;
     } else if (removeImage === 'true') {
       deleteImageFile(current.image_url);
       imageUrl = null;

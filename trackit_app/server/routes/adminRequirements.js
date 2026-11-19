@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
+const { uploadStorage, removeStored } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
@@ -15,15 +16,8 @@ const { requirementFileFilter } = require('../utils/requirementFileTypes');
 const router = express.Router();
 router.use(requireAdminAuth);
 
-const TEMPLATE_DIR = path.join(__dirname, '..', 'uploads', 'requirements', 'templates');
 const uploadTemplate = multer({
-  storage: multer.diskStorage({
-    destination: TEMPLATE_DIR,
-    filename: (req, file, cb) => {
-      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      cb(null, `${unique}${path.extname(file.originalname).toLowerCase()}`);
-    },
-  }),
+  storage: uploadStorage('requirements/templates'),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: requirementFileFilter,
 });
@@ -61,12 +55,7 @@ function cleanText(value) {
 
 // Template files no longer referenced are deleted from disk.
 function removeTemplateFile(url) {
-  if (!url || !url.startsWith('/uploads/requirements/templates/')) return;
-  fs.unlink(path.join(TEMPLATE_DIR, path.basename(url)), (error) => {
-    if (error && error.code !== 'ENOENT') {
-      console.error('Remove template file error:', url, error.message);
-    }
-  });
+  removeStored(url);
 }
 
 router.get('/', async (req, res) => {
@@ -294,7 +283,7 @@ router.post('/:id/template', uploadTemplate.single('template'), async (req, res)
       [id],
     );
     if (previous.rows.length === 0) {
-      fs.unlink(req.file.path, () => {});
+      removeStored(req.file.url);
       return res.status(404).json({ success: false, message: 'Requirement not found.' });
     }
     const updated = await pool.query(
@@ -302,7 +291,7 @@ router.post('/:id/template', uploadTemplate.single('template'), async (req, res)
        SET template_url = $1, template_name = $2, has_template = true,
            template_size = $4, template_uploaded_at = now(), updated_at = now(), updated_by = $5
        WHERE id = $3 RETURNING *`,
-      [`/uploads/requirements/templates/${req.file.filename}`, req.file.originalname, id, req.file.size, req.adminId],
+      [req.file.url, req.file.originalname, id, req.file.size, req.adminId],
     );
     removeTemplateFile(previous.rows[0].template_url);
     res.json({ success: true, requirement: toRequirementJson(updated.rows[0]) });

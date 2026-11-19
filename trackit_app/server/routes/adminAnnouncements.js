@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
+const { uploadStorage, removeStored } = require('../utils/storage');
 const path = require('path');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
@@ -8,13 +9,7 @@ const { requireAdminAuth } = require('../middleware/adminAuth');
 const router = express.Router();
 router.use(requireAdminAuth);
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', 'uploads', 'admin-announcements'),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
+const storage = uploadStorage('admin-announcements');
 const ALLOWED_MIMETYPES = [
   'image/jpeg',
   'image/png',
@@ -35,12 +30,7 @@ const VALID_AUDIENCES = ['all', 'instructors', 'students'];
 
 function deleteAttachmentFile(attachmentUrl) {
   if (!attachmentUrl) return;
-  const filePath = path.join(__dirname, '..', attachmentUrl.replace(/^\//, ''));
-  fs.unlink(filePath, (err) => {
-    if (err && err.code !== 'ENOENT') {
-      console.error('Failed to delete admin announcement attachment file:', err);
-    }
-  });
+  removeStored(attachmentUrl);
 }
 
 router.get('/', async (req, res) => {
@@ -99,7 +89,7 @@ router.post('/', upload.single('attachment'), async (req, res) => {
     }
 
     const attachmentUrl = req.file
-      ? `/uploads/admin-announcements/${req.file.filename}`
+      ? req.file.url
       : null;
     const attachmentName = req.file ? req.file.originalname : null;
 

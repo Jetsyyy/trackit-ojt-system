@@ -390,3 +390,47 @@ logged-in instructor's own students, and `/api/admin/*` to admins.
   app no longer calls them.
 - **Push/real-time notifications** — the feed is pull-based (fetched on
   load), no WebSocket/push infrastructure yet.
+
+## 8. Deploying to Vercel
+
+The app (Flutter web) and the API (Express) deploy together as one Vercel
+project, so they share one address. The database stays on Neon. Config
+lives in `trackit_app/vercel.json`, `trackit_app/vercel/*.sh` and
+`trackit_app/api/index.js`.
+
+**Uploaded files.** Vercel wipes the server's disk, so uploads (requirement
+documents, weekly DTR/AR files, avatars, templates, announcement images) go
+to **Vercel Blob** whenever `BLOB_READ_WRITE_TOKEN` is set
+(`server/utils/storage.js`). Without it, as on a local computer, they are
+saved under `server/uploads` as before.
+
+**One-time setup**
+1. vercel.com → sign in with GitHub → **Add New → Project** → import
+   `trackit-ojt-system`.
+2. **Root Directory:** `trackit_app`. Leave the framework as "Other"; the
+   build settings come from `vercel.json`.
+3. **Environment Variables:** add `DATABASE_URL` and `JWT_SECRET` (same
+   values as `trackit_app/.env`). Add the mail settings too if email is
+   used.
+4. Deploy. Then **Storage → Create → Blob**, connect it to the project
+   (this adds `BLOB_READ_WRITE_TOKEN`), and **Redeploy**.
+5. Move the files already uploaded on your computer into Blob (run once,
+   from `trackit_app/server`, with `BLOB_READ_WRITE_TOKEN` copied from the
+   Blob store's `.env.local` tab into `trackit_app/.env`):
+   ```
+   node scripts/migrate_uploads_to_blob.js          # dry run
+   node scripts/migrate_uploads_to_blob.js --apply
+   ```
+   After this, remove `BLOB_READ_WRITE_TOKEN` from `.env` if you want local
+   uploads to keep saving to disk.
+
+After setup, every push to `main` redeploys automatically.
+
+**Limits to know**
+- Vercel accepts request bodies up to **4.5 MB**, so a single upload
+  larger than that fails online (locally the limit stays 10 MB). Phone
+  photos are usually under this; large scans may need compressing.
+- Blob files are public links with random, unguessable names, the same
+  level of protection as the old `/uploads` folder.
+- `FLUTTER_VERSION` in `vercel/install.sh` should match your local
+  `flutter --version` when you upgrade Flutter.
