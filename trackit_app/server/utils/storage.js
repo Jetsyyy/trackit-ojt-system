@@ -26,7 +26,11 @@ function blobToken() {
   }
   return null;
 }
-const useBlob = () => Boolean(blobToken());
+// Newer stores sign in without a key: Vercel provides BLOB_STORE_ID and a
+// short-lived per-request token (OIDC), which @vercel/blob uses by itself.
+const useBlob = () => Boolean(blobToken() || process.env.BLOB_STORE_ID);
+// Pass the key only when there is one, so OIDC sign-in is used otherwise.
+const auth = () => (blobToken() ? { token: blobToken() } : {});
 
 function uniqueName(originalName) {
   const ext = path.extname(originalName || '').toLowerCase();
@@ -57,7 +61,7 @@ class UploadStorage {
             access: 'public',
             contentType: file.mimetype,
             addRandomSuffix: true,
-            token: blobToken(),
+            ...auth(),
           });
           cb(null, { filename: name, size: buffer.length, url: blob.url, path: null });
         })
@@ -117,7 +121,7 @@ async function removeStored(url) {
     if (/^https?:\/\//.test(url)) {
       if (!useBlob()) return;
       const { del } = require('@vercel/blob');
-      await del(url, { token: blobToken() });
+      await del(url, auth());
       return;
     }
     if (!url.startsWith('/uploads/')) return;
