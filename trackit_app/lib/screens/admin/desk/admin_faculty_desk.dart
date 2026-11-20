@@ -6,6 +6,7 @@ import '../../../services/admin_accounts_service.dart';
 import '../../../services/admin_classes_service.dart';
 import '../../../services/admin_instructors_service.dart';
 import '../../../services/api_client.dart';
+import '../../../utils/app_portal.dart';
 import '../../../utils/file_download.dart';
 import '../../../widgets/common/desk_ui.dart';
 
@@ -1271,7 +1272,7 @@ class _InviteDialogState extends State<_InviteDialog> {
     }
   }
 
-  String get _link => '${Uri.base.origin}/?code=${_code ?? ''}';
+  String get _link => '${Uri.base.origin}$kStaffPortalPath?code=${_code ?? ''}';
 
   void _copy(String text, String message) {
     Clipboard.setData(ClipboardData(text: text));

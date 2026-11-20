@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
 import '../../utils/app_colors.dart';
+import '../../utils/app_portal.dart';
 import '../admin/admin_bootstrap.dart';
 import '../student/student_bootstrap.dart';
 import '../teacher/teacher_bootstrap.dart';
@@ -45,7 +46,10 @@ class _AuthGateState extends State<AuthGate> {
       await _instructorAuthService.logout();
       await _adminAuthService.logout();
     }
-    final role = stored.role;
+    // A saved session only reopens in its own portal: a student session is
+    // not resumed on /staff, nor an instructor or admin one on the Student
+    // portal (they see that portal's login instead).
+    final role = rolesFor(currentPortal).contains(stored.role) ? stored.role : null;
     SessionRole? resolvedRole;
     if (role == SessionRole.student) {
       final token = await _authService.loadStoredToken();

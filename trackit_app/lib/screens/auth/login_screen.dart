@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
 import '../../utils/app_colors.dart';
+import '../../utils/app_portal.dart';
 import '../../widgets/auth/portal_layout.dart';
 import '../teacher/instructor_register_screen.dart';
 import 'register_screen.dart';
@@ -35,15 +36,17 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _submitting = false;
   bool _rememberMe = false;
   String? _errorMessage;
-  SessionRole _role = SessionRole.student;
+  // The Student portal signs in students only; the Staff portal (/staff)
+  // signs in Instructors (default) and the Admin.
+  SessionRole _role = rolesFor(currentPortal).first;
 
   @override
   void initState() {
     super.initState();
-    // An Admin invite link (.../?code=INS-XXXX-XXXX) opens instructor
+    // An Admin invite link (.../staff?code=INS-XXXX-XXXX) opens instructor
     // sign-up with the code filled in.
     final code = Uri.base.queryParameters['code']?.trim();
-    if (code != null && code.toUpperCase().startsWith('INS-')) {
+    if (currentPortal == AppPortal.staff && code != null && code.toUpperCase().startsWith('INS-')) {
       _role = SessionRole.instructor;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _openRegister(initialCode: code.toUpperCase());
@@ -59,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _switchPortal(SessionRole role) {
-    if (role == _role) return;
+    if (role == _role || !rolesFor(currentPortal).contains(role)) return;
     setState(() {
       _role = role;
       _errorMessage = null;

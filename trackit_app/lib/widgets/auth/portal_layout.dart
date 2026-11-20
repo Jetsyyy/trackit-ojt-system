@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/app_portal.dart';
 import '../../services/session_role.dart';
 import '../../utils/app_colors.dart';
 
@@ -361,10 +362,17 @@ class _Brand extends StatelessWidget {
 
 class _PortalSwitcher extends StatelessWidget {
   final SessionRole portal;
-  final ValueChanged<SessionRole>? onChanged;
   final bool pill;
 
-  const _PortalSwitcher({required this.portal, required this.onChanged, required this.pill});
+  const _PortalSwitcher({required this.portal, required ValueChanged<SessionRole>? onChanged, required this.pill})
+      : _onChanged = onChanged;
+
+  final ValueChanged<SessionRole>? _onChanged;
+
+  // Only this portal's roles are offered; the Student portal has just one,
+  // so its label is plain text, not a menu.
+  ValueChanged<SessionRole>? get onChanged =>
+      rolesFor(currentPortal).length > 1 ? _onChanged : null;
 
   @override
   Widget build(BuildContext context) {
@@ -419,7 +427,7 @@ class _PortalSwitcher extends StatelessWidget {
       onSelected: onChanged,
       position: pill ? PopupMenuPosition.under : PopupMenuPosition.over,
       itemBuilder: (context) => [
-        for (final role in SessionRole.values)
+        for (final role in rolesFor(currentPortal))
           PopupMenuItem(
             value: role,
             child: Row(

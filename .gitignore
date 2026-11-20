@@ -6,3 +6,6 @@
 .env
 .env.*
 !.env.example
+
+# Local data backups (personal data; never commit)
+/backups/
