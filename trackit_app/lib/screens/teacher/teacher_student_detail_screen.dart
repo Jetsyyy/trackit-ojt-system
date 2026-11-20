@@ -107,15 +107,16 @@ class _DetailBody extends StatelessWidget {
     return 'Week ${days ~/ 7 + 1}';
   }
 
-  /// The student's single "contact person" field holds a name and usually a
-  /// phone number ("Juan Dela Cruz 09171234567"); show them on two lines.
-  (String, String) get _guardian {
+  /// The student's single "contact person" field holds a name and usually
+  /// a phone number ("Juan Dela Cruz 09171234567"): name, then number on
+  /// the next line, as in the mockup.
+  String get _emergencyContact {
     final raw = (student.contactPerson ?? '').trim();
-    if (raw.isEmpty) return ('—', '—');
+    if (raw.isEmpty) return '—';
     final match = RegExp(r'^(.*?)[\s,;:/-]*((?:\+63|0)[\d\s-]{9,13}\d)$').firstMatch(raw);
-    if (match == null) return (raw, '—');
+    if (match == null) return raw;
     final name = match.group(1)!.trim();
-    return (name.isEmpty ? '—' : name, match.group(2)!.trim());
+    return name.isEmpty ? match.group(2)!.trim() : '$name\n${match.group(2)!.trim()}';
   }
 
   @override
@@ -125,25 +126,31 @@ class _DetailBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
       children: [
-        StudentCard(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        // Photo, name and Student ID.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFDDD6D7)),
+          ),
           child: Row(
             children: [
               DeskAvatar(
                 name: student.name,
                 imageUrl: student.avatarUrl != null ? ApiClient.resolveUrl(student.avatarUrl!) : null,
-                radius: 32,
+                radius: 28,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(student.name, style: studentSerif(size: 20, color: StudentColors.heading)),
-                    const SizedBox(height: 4),
+                    Text(student.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black)),
+                    const SizedBox(height: 2),
                     Text(
                       'Student ID: ${_orDash(student.studentNumber)}',
-                      style: const TextStyle(fontSize: 13, color: StudentColors.muted),
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Colors.black),
                     ),
                   ],
                 ),
@@ -151,64 +158,58 @@ class _DetailBody extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        _InfoCard(
-          icon: Icons.badge_outlined,
-          title: 'Student Information',
-          rows: [
-            ('Full Name', student.name),
-            ('Program', _orDash(student.course)),
-            ('Section', _orDash(student.section)),
-            ('Email', student.email),
-            ('Contact Number', _orDash(student.phone)),
-            ('Address', _orDash(student.address)),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _InfoCard(
-          icon: Icons.family_restroom_outlined,
-          title: 'Contact Person',
-          rows: [
-            ('Family / Guardian', _guardian.$1),
-            ('Emergency Contact', _guardian.$2),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _InfoCard(
-          icon: Icons.apartment_outlined,
-          title: 'Assigned Company',
-          rows: company == null
-              ? const [('Company', 'Not yet deployed')]
-              : [
-                  ('Company', _orDash(company.name)),
-                  ('Address', _orDash(company.address)),
-                  ('Supervisor', _orDash(company.supervisorName)),
-                  ('Contact Number', _orDash(company.contactNumber)),
+        const SizedBox(height: 12),
+        // The four information cards sit on one rounded panel.
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFBF8F8),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 8, offset: Offset(0, 2))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _InfoCard(
+                icon: Icons.badge_outlined,
+                title: 'Student Information',
+                rows: [
+                  ('Full Name', student.name),
+                  ('Program', _orDash(student.course)),
+                  ('Section', _orDash(student.section)),
+                  ('Email', student.email),
+                  ('Address', _orDash(student.address)),
                 ],
-        ),
-        const SizedBox(height: 14),
-        _InfoCard(
-          icon: Icons.bar_chart_rounded,
-          title: 'OJT Progress',
-          rows: [
-            ('Hours', '${_hrs(p.completedHours)} / ${_hrs(p.requiredHours)} hrs'),
-            ('Weeks', _weekLabel),
-          ],
-          footer: Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                DeskProgressBar(value: p.progressRatio),
-                const SizedBox(height: 6),
-                Text(
-                  p.pendingHours > 0
-                      ? '${(p.progressRatio * 100).round()}% complete · ${_hrs(p.pendingHours)} hrs waiting for approval'
-                      : '${(p.progressRatio * 100).round()}% complete',
-                  style: const TextStyle(fontSize: 12, color: StudentColors.muted),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              _InfoCard(
+                icon: Icons.family_restroom_outlined,
+                title: 'Contact Person (Family / Guardian)',
+                rows: [('Emergency Contact', _emergencyContact)],
+              ),
+              const SizedBox(height: 12),
+              _InfoCard(
+                icon: Icons.apartment_outlined,
+                title: 'Assigned Company',
+                rows: company == null
+                    ? const [('Company', 'Not yet deployed')]
+                    : [
+                        ('Company', _orDash(company.name)),
+                        ('Address', _orDash(company.address)),
+                        ('Supervisor', _orDash(company.supervisorName)),
+                        ('Contact Number', _orDash(company.contactNumber)),
+                      ],
+              ),
+              const SizedBox(height: 12),
+              _InfoCard(
+                icon: Icons.assignment_turned_in_outlined,
+                title: 'OJT Progress',
+                rows: [
+                  ('Hours', '${_hrs(p.completedHours)} / ${_hrs(p.requiredHours)} hrs'),
+                  ('Weeks', _weekLabel),
+                ],
+              ),
+            ],
           ),
         ),
       ],
@@ -220,48 +221,48 @@ class _InfoCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final List<(String, String)> rows;
-  final Widget? footer;
 
-  const _InfoCard({required this.icon, required this.title, required this.rows, this.footer});
+  const _InfoCard({required this.icon, required this.title, required this.rows});
 
   @override
   Widget build(BuildContext context) {
-    return StudentCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDD6D7)),
+        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 4, offset: Offset(0, 2))],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: StudentColors.maroon),
+              Icon(icon, size: 18, color: StudentColors.maroon),
               const SizedBox(width: 8),
-              Text(title, style: studentSerif(size: 17, color: StudentColors.heading)),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black)),
+              ),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: Color(0xFFE2DCDB)),
-          ),
+          const SizedBox(height: 8),
           for (final (label, value) in rows)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
+              padding: const EdgeInsets.fromLTRB(26, 5, 0, 5),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 128,
-                    child: Text(label, style: const TextStyle(fontSize: 13, color: StudentColors.muted)),
+                    width: 118,
+                    child: Text(label, style: const TextStyle(fontSize: 12.5, color: StudentColors.muted)),
                   ),
                   Expanded(
-                    child: Text(
-                      value,
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Colors.black87),
-                    ),
+                    child: Text(value, style: const TextStyle(fontSize: 12.5, color: Colors.black87, height: 1.3)),
                   ),
                 ],
               ),
             ),
-          if (footer != null) footer!,
         ],
       ),
     );
