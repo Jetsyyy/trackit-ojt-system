@@ -30,7 +30,7 @@ class MainApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TRACKIT',
+      title: 'TrackIT',
       // Inter, matching the TrackIT mockups. Loaded by google_fonts; if it
       // can't be fetched (no internet) Flutter falls back to the default.
       theme: ThemeData(

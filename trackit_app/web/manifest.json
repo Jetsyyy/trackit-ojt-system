@@ -1,11 +1,11 @@
 {
-    "name": "trackit_app",
-    "short_name": "trackit_app",
+    "name": "TrackIT: OJT Tracking System",
+    "short_name": "TrackIT",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#6E1423",
+    "theme_color": "#6E1423",
+    "description": "OJT Tracking System of the College of Computer Studies and Technology, Dalubhasaan ng Lunsod ng San Pablo.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
