@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../../../models/teacher_dashboard.dart';
 import '../../../services/teacher_notifications_service.dart';
@@ -84,36 +86,40 @@ class TeacherDashboardDesk extends StatelessWidget {
   Widget build(BuildContext context) {
     if (compact) return _compact(context);
     final name = dashboard.instructorName.trim();
+    // Two rows of cards that share the screen height (never smaller than
+    // 280 px each), so the dashboard uses the desktop space instead of
+    // leaving the bottom of the page empty.
+    final rowHeight = math.max(280.0, (MediaQuery.sizeOf(context).height - 168) / 2);
+    const gap = 20.0;
     return DeskPage(
       title: '${phGreeting()}${name.isEmpty ? '' : ', $name'}!',
       onRefresh: onRefresh,
       children: [
-        IntrinsicHeight(
+        SizedBox(
+          height: rowHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(flex: 4, child: _SectionsCard(classes: dashboard.classes, onOpen: onOpenStudents)),
-              const SizedBox(width: 16),
-              Expanded(flex: 6, child: _SummaryCard(dashboard: dashboard, onOpenStudents: onOpenStudents)),
+              Expanded(flex: 4, child: _WideSections(classes: dashboard.classes, onOpen: onOpenStudents)),
+              const SizedBox(width: gap),
+              Expanded(flex: 6, child: _WideSummary(dashboard: dashboard, onOpenStudents: onOpenStudents)),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        IntrinsicHeight(
+        const SizedBox(height: gap),
+        SizedBox(
+          height: rowHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 flex: 4,
-                child: _NotificationsCard(
-                  service: notificationsService,
-                  onViewAll: onOpenNotifications,
-                ),
+                child: _WideNotifications(service: notificationsService, onViewAll: onOpenNotifications),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: gap),
               Expanded(
                 flex: 6,
-                child: _AttentionCard(
+                child: _WideAttention(
                   dashboard: dashboard,
                   onRequirements: onOpenRequirementsReview,
                   onWeekly: onOpenWeeklyReview,
@@ -492,6 +498,343 @@ class _AttentionCard extends StatelessWidget {
             const SizedBox(height: 12),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Desktop (wide) cards: they fill the height they are given and use larger
+// type, icons and spacing than the phone cards above.
+
+const _wideCardPadding = EdgeInsets.fromLTRB(24, 22, 24, 22);
+
+class _WideTitle extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  final Widget? trailing;
+
+  const _WideTitle(this.text, {this.icon, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 24, color: DeskColors.heading),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: DeskColors.heading)),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _WideSections extends StatelessWidget {
+  final List<TeacherDashboardClass> classes;
+  final VoidCallback onOpen;
+
+  const _WideSections({required this.classes, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    return DeskCard(
+      padding: _wideCardPadding,
+      child: Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _WideTitle('Assigned Programs & Sections'),
+            Expanded(
+              child: classes.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No sections assigned yet. The Admin assigns your sections.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: DeskColors.muted),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: classes.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 14),
+                      itemBuilder: (context, i) {
+                        final c = classes[i];
+                        return DeskTile(
+                          onTap: onOpen,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                          child: Row(
+                            children: [
+                              const DeskIconBox(icon: Icons.school_outlined, size: 42),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(c.label, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF1F1F1F))),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${c.studentCount} student${c.studentCount == 1 ? '' : 's'}',
+                                      style: const TextStyle(fontSize: 13.5, color: DeskColors.muted),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (c.academicYear != null)
+                                Text(c.academicYear!, style: const TextStyle(fontSize: 12.5, color: DeskColors.muted)),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideSummary extends StatelessWidget {
+  final TeacherDashboard dashboard;
+  final VoidCallback onOpenStudents;
+
+  const _WideSummary({required this.dashboard, required this.onOpenStudents});
+
+  Widget _tile(IconData icon, String label, String value) {
+    return DeskTile(
+      raised: true,
+      onTap: onOpenStudents,
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+      child: Row(
+        children: [
+          DeskIconBox(icon: icon, size: 52),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: DeskColors.heading, height: 1.1)),
+                ),
+                const SizedBox(height: 4),
+                Text(label, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: Color(0xFF2B2B2B))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = dashboard.assignedStudents;
+    final tiles = [
+      _tile(Icons.groups_outlined, 'Assigned Students', '$total'),
+      _tile(Icons.directions_run, 'Active Students', '${dashboard.activeStudents} / $total'),
+      _tile(Icons.flight_takeoff, 'Ready for Deployment', '${dashboard.readyForDeployment} / $total'),
+      _tile(Icons.verified_outlined, 'Completed OJT', '${dashboard.completedStudents} / $total'),
+    ];
+    Widget row(int a, int b) => Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [Expanded(child: tiles[a]), const SizedBox(width: 18), Expanded(child: tiles[b])],
+          ),
+        );
+    return DeskCard(
+      padding: _wideCardPadding,
+      child: Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _WideTitle("Today's Summary"),
+            row(0, 1),
+            const SizedBox(height: 18),
+            row(2, 3),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideNotifications extends StatelessWidget {
+  final TeacherNotificationsService service;
+  final VoidCallback onViewAll;
+
+  const _WideNotifications({required this.service, required this.onViewAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return DeskCard(
+      padding: _wideCardPadding,
+      child: Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _WideTitle(
+              'Recent Notifications',
+              icon: Icons.notifications_none,
+              trailing: TextButton(
+                onPressed: onViewAll,
+                style: TextButton.styleFrom(foregroundColor: DeskColors.heading),
+                child: const Text('View All', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            Expanded(
+              child: ListenableBuilder(
+                listenable: service,
+                builder: (context, _) {
+                  final items = service.notifications.take(8).toList();
+                  if (items.isEmpty) {
+                    return const Center(
+                      child: Text('No notifications yet.', style: TextStyle(fontSize: 14, color: DeskColors.muted)),
+                    );
+                  }
+                  return ListView.separated(
+                    itemCount: items.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) {
+                      final n = items[i];
+                      return DeskTile(
+                        onTap: () {
+                          service.markAsRead(n.id);
+                          onViewAll();
+                        },
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const DeskIconBox(icon: Icons.notifications_active_outlined, size: 34),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    n.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: n.isRead ? FontWeight.w500 : FontWeight.w700,
+                                      color: const Color(0xFF1F1F1F),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(timeAgo(n.createdAt), style: const TextStyle(fontSize: 12, color: DeskColors.muted)),
+                                ],
+                              ),
+                            ),
+                            if (!n.isRead)
+                              Container(
+                                width: 9,
+                                height: 9,
+                                margin: const EdgeInsets.only(top: 6, left: 8),
+                                decoration: const BoxDecoration(color: Color(0xFFFF7A1A), shape: BoxShape.circle),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WideAttention extends StatelessWidget {
+  final TeacherDashboard dashboard;
+  final VoidCallback onRequirements;
+  final VoidCallback onWeekly;
+  final VoidCallback onRegistrations;
+
+  const _WideAttention({
+    required this.dashboard,
+    required this.onRequirements,
+    required this.onWeekly,
+    required this.onRegistrations,
+  });
+
+  String _plural(int n, String one, String many) => '$n ${n == 1 ? one : many}';
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (
+        Icons.description_outlined,
+        'Requirements Approval',
+        '${_plural(dashboard.requirementsToReview, 'requirement', 'requirements')} waiting for your review',
+        dashboard.requirementsToReview,
+        onRequirements,
+      ),
+      (
+        Icons.event_note_outlined,
+        'Weekly DTR & AR Approval',
+        '${_plural(dashboard.weeklySubmissionsToReview, 'week', 'weeks')} pending your approval',
+        dashboard.weeklySubmissionsToReview,
+        onWeekly,
+      ),
+      (
+        Icons.how_to_reg_outlined,
+        'Account Approval',
+        '${_plural(dashboard.registrationRequests, 'student', 'students')} waiting to join your sections',
+        dashboard.registrationRequests,
+        onRegistrations,
+      ),
+    ];
+    return DeskCard(
+      padding: _wideCardPadding,
+      child: Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _WideTitle('Needs Your Attention', icon: Icons.warning_amber_rounded),
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(height: 14),
+              Expanded(
+                child: DeskTile(
+                  onTap: items[i].$5,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Row(
+                    children: [
+                      DeskIconBox(icon: items[i].$1, size: 46),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(items[i].$2, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: Color(0xFF1F1F1F))),
+                            const SizedBox(height: 4),
+                            Text(items[i].$3, style: const TextStyle(fontSize: 13.5, color: DeskColors.muted)),
+                          ],
+                        ),
+                      ),
+                      if (items[i].$4 > 0) DeskCountBadge(count: items[i].$4),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.chevron_right, color: DeskColors.muted),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

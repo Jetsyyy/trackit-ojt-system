@@ -31,7 +31,7 @@ class TeacherNotificationsDesk extends StatefulWidget {
 }
 
 class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
-  int _tab = 1;
+  int _tab = 0; // Notifications first; announcements are one tab over.
   String _query = '';
   int? _sectionFilter;
   List<Announcement> _announcements = [];
@@ -49,6 +49,10 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
   bool _removeImage = false;
   bool _posting = false;
   String? _formError;
+
+  /// The Create/Edit Announcement panel only shows after the instructor
+  /// opens it (Instructor Side 3.3); the page itself just lists items.
+  bool _composing = false;
 
   @override
   void initState() {
@@ -98,6 +102,19 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
     }).toList();
   }
 
+  void _openComposer() {
+    _clearForm();
+    setState(() {
+      _tab = 1;
+      _composing = true;
+    });
+  }
+
+  void _closeComposer() {
+    _clearForm();
+    setState(() => _composing = false);
+  }
+
   void _clearForm() {
     setState(() {
       _editing = null;
@@ -116,6 +133,7 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
 
   void _startEdit(Announcement a) {
     setState(() {
+      _composing = true;
       _editing = a;
       _titleController.text = a.title;
       _messageController.text = a.content;
@@ -196,7 +214,7 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
       }
       if (!mounted) return;
       _snack(_editing == null ? 'Announcement posted.' : 'Announcement updated.');
-      _clearForm();
+      _closeComposer();
       await _load();
     } catch (e) {
       if (mounted) setState(() => _formError = e is ApiException ? e.message : 'Could not post the announcement.');
@@ -224,7 +242,7 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
     if (ok != true) return;
     try {
       await widget.announcementsService.deleteAnnouncement(a.id);
-      if (_editing?.id == a.id) _clearForm();
+      if (_editing?.id == a.id) _closeComposer();
       await _load();
       if (mounted) _snack('Announcement deleted.');
     } catch (e) {
@@ -257,8 +275,11 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(flex: 11, child: _tab == 0 ? _notificationsCard() : _feedCard()),
-              const SizedBox(width: 18),
-              Expanded(flex: 9, child: _createCard()),
+              // Only while creating or editing an announcement.
+              if (_composing && _tab == 1) ...[
+                const SizedBox(width: 18),
+                Expanded(flex: 9, child: _createCard()),
+              ],
             ],
           ),
         ),
@@ -301,6 +322,17 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
     final items = _visibleAnnouncements;
     return DeskCard(
       title: 'Announcement Feed',
+      trailing: _composing
+          ? null
+          : FilledButton.icon(
+              onPressed: _openComposer,
+              style: FilledButton.styleFrom(
+                backgroundColor: DeskColors.maroon,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create Announcement', style: TextStyle(fontSize: 12.5)),
+            ),
       child: Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -343,7 +375,7 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
                   : items.isEmpty
                       ? const Center(
                           child: Text(
-                            'No announcements yet. Post one using the form on the right.',
+                            'No announcements yet. Click Create Announcement to post one.',
                             style: TextStyle(fontSize: 12.5, color: DeskColors.muted),
                           ),
                         )
@@ -468,6 +500,11 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
     const label = TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF555555));
     return DeskCard(
       title: editing ? 'Edit Announcement' : 'Create Announcement',
+      trailing: IconButton(
+        tooltip: 'Close',
+        onPressed: _posting ? null : _closeComposer,
+        icon: const Icon(Icons.close, size: 20),
+      ),
       child: Expanded(
         child: ListView(
           children: [
@@ -585,7 +622,7 @@ class _TeacherNotificationsDeskState extends State<TeacherNotificationsDesk> {
                   child: SizedBox(
                     height: 42,
                     child: OutlinedButton(
-                      onPressed: _posting ? null : _clearForm,
+                      onPressed: _posting ? null : (editing ? _closeComposer : _clearForm),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF333333),
                         side: const BorderSide(color: Color(0xFFD6D6D6)),

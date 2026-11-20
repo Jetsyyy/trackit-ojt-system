@@ -704,14 +704,37 @@ class _StudentTable extends StatelessWidget {
 
   const _StudentTable({required this.rows, required this.onOpen});
 
+  // OJT Hours is required on this table (Instructor Side 3.1).
   static const _columns = [
-    ('Name', 22),
-    ('Program, Year\n& Section', 12),
-    ('Email', 20),
-    ('Contact Person', 16),
-    ('Company', 16),
-    ('Address', 18),
+    ('Name', 21),
+    ('Program, Year\n& Section', 11),
+    ('OJT Hours', 14),
+    ('Email', 18),
+    ('Contact Person', 14),
+    ('Company', 15),
+    ('Address', 15),
   ];
+
+  static String _h(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
+  Widget _hoursCell(TeacherStudentSummary s) {
+    final ratio = s.requiredHours <= 0 ? 0.0 : (s.completedHours / s.requiredHours).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${_h(s.completedHours)} / ${_h(s.requiredHours)} hrs',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF2B2B2B)),
+          ),
+          const SizedBox(height: 4),
+          DeskProgressBar(value: ratio, height: 5),
+        ],
+      ),
+    );
+  }
 
   static const _cell = TextStyle(fontSize: 11.5, color: Color(0xFF2B2B2B));
 
@@ -780,7 +803,7 @@ class _StudentTable extends StatelessWidget {
                   child: Row(
                     children: [
                       Expanded(
-                        flex: 22,
+                        flex: 21,
                         child: Row(
                           children: [
                             DeskAvatar(
@@ -809,16 +832,17 @@ class _StudentTable extends StatelessWidget {
                         ),
                       ),
                       Expanded(
-                        flex: 12,
+                        flex: 11,
                         child: _cellText(
                           rows[i].sectionLabel,
                           center: true,
                         ),
                       ),
-                      Expanded(flex: 20, child: _cellText(rows[i].email, center: true)),
-                      Expanded(flex: 16, child: _cellText(rows[i].contactPerson, center: true)),
+                      Expanded(flex: 14, child: _hoursCell(rows[i])),
+                      Expanded(flex: 18, child: _cellText(rows[i].email, center: true)),
+                      Expanded(flex: 14, child: _cellText(rows[i].contactPerson, center: true)),
                       Expanded(
-                        flex: 16,
+                        flex: 15,
                         child: _cellText(
                           rows[i].companyName == null
                               ? null
@@ -828,7 +852,7 @@ class _StudentTable extends StatelessWidget {
                                   .join(', '),
                         ),
                       ),
-                      Expanded(flex: 18, child: _cellText(rows[i].address)),
+                      Expanded(flex: 15, child: _cellText(rows[i].address)),
                     ],
                   ),
                 ),

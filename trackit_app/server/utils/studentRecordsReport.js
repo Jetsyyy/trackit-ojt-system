@@ -1,13 +1,13 @@
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 const pool = require('../db');
-const { loadWeekPlan, buildWeekList } = require('./weeklySubmissions');
 
 // Downloadable records of an instructor's assigned students (System
 // Revisions item 14), for monitoring, documentation and reporting.
-// Excel: a "Students" summary sheet plus a "Weekly DTR & AR" sheet with
-// every week of every student. PDF: the summary table, then each
-// student's weekly log.
+// One summary row per student (name, section, company, OJT hours,
+// approved weeks, requirements, stage, pace) in Excel or PDF. The
+// per-student weekly listing that used to follow it was removed
+// (Instructor Side 3.1: simpler reports).
 
 const STAGE_LABELS = {
   notStarted: 'Not started',
@@ -22,13 +22,6 @@ const PACE_LABELS = {
   aheadOfSchedule: 'Ahead of Schedule',
   completed: 'Completed',
 };
-const WEEK_STATUS = {
-  missing: 'Not submitted',
-  submitted: 'Waiting for review',
-  approved: 'Approved',
-  rejected: 'Returned',
-};
-
 function hrs(n) {
   const v = Number(n || 0);
   return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, '');
@@ -47,8 +40,6 @@ async function buildRecords(students) {
 
   const records = [];
   for (const s of students) {
-    const plan = await loadWeekPlan(s.id);
-    const weeks = await buildWeekList(plan);
     records.push({
       name: s.name,
       studentNumber: s.student_number || '',
@@ -66,7 +57,6 @@ async function buildRecords(students) {
       stage: STAGE_LABELS[s.stage] || s.stage,
       pace: PACE_LABELS[s.progressStatus] || s.progressStatus,
       requirements: `${approvedBy.get(Number(s.id)) || 0} / ${totalRequirements}`,
-      weeks,
     });
   }
   return records;
@@ -105,24 +95,6 @@ async function sendExcel(res, { records, title, subtitle, fileName }) {
     sheet.getColumn(i + 1).width = c.width;
   });
   for (const r of records) sheet.addRow(SUMMARY_COLUMNS.map((c) => summaryValue(r, c.key)));
-
-  const weekly = workbook.addWorksheet('Weekly DTR & AR');
-  weekly.addRow(['Student', 'Week', 'Dates', 'Status', 'Hours Claimed', 'Remarks']).font = { bold: true };
-  [24, 8, 26, 18, 14, 40].forEach((w, i) => {
-    weekly.getColumn(i + 1).width = w;
-  });
-  for (const r of records) {
-    for (const w of r.weeks) {
-      weekly.addRow([
-        r.name,
-        w.weekNumber,
-        `${w.weekStartDate} to ${w.weekEndDate}`,
-        WEEK_STATUS[w.status] || w.status,
-        w.claimedHours != null ? Number(w.claimedHours) : '',
-        w.remarks || '',
-      ]);
-    }
-  }
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}.xlsx"`);
@@ -180,32 +152,6 @@ function sendPdf(res, { records, title, subtitle, fileName }) {
   );
   if (records.length === 0) doc.text('No assigned students.');
 
-  const weekColumns = [
-    { key: 'week', label: 'Week', pdf: 40 },
-    { key: 'dates', label: 'Dates', pdf: 140 },
-    { key: 'status', label: 'Status', pdf: 100 },
-    { key: 'hours', label: 'Hours Claimed', pdf: 70 },
-    { key: 'remarks', label: 'Remarks', pdf: 380 },
-  ];
-  for (const r of records) {
-    if (r.weeks.length === 0) continue;
-    if (doc.y + 60 > bottom()) doc.addPage();
-    doc.moveDown(0.8);
-    doc.x = left;
-    doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000')
-      .text(`${r.name} - ${r.section} - ${r.company}`, left);
-    doc.moveDown(0.2);
-    table(
-      weekColumns,
-      r.weeks.map((w) => ({
-        week: w.weekNumber,
-        dates: `${w.weekStartDate} to ${w.weekEndDate}`,
-        status: WEEK_STATUS[w.status] || w.status,
-        hours: w.claimedHours != null ? hrs(w.claimedHours) : '',
-        remarks: w.remarks || '',
-      })),
-    );
-  }
   doc.end();
 }
 
