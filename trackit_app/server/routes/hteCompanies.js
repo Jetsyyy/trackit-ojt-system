@@ -6,27 +6,19 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Read-only for students -- name, industry, location, address, email,
-// website, date accredited, and contact persons, exactly what the Admin
-// entered. No positions/slots/application data: this directory is a pure
+// website and date accredited, as the Admin entered them. Contact persons
+// are NOT sent to students (Student Side 4.1: the companies asked that
+// their contact persons stay private); only the Admin sees them. No positions/slots/application data: this directory is a pure
 // reference/recommendation list, not an application tracker.
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT c.id, c.name, c.industry, c.location, c.address, c.email, c.website,
-              c.date_accredited,
-        COALESCE(
-          json_agg(
-            json_build_object('id', ct.id, 'name', ct.name, 'phone', ct.phone)
-            ORDER BY ct.id
-          ) FILTER (WHERE ct.id IS NOT NULL),
-          '[]'
-        ) AS contacts
+              c.date_accredited
        FROM hte_companies c
-       LEFT JOIN hte_company_contacts ct ON ct.company_id = c.id
        -- Entries added automatically from student details stay out of the
        -- student-facing directory until the Admin reviews them.
        WHERE c.source = 'admin'
-       GROUP BY c.id
        ORDER BY c.name ASC`,
     );
     res.json({
@@ -40,7 +32,7 @@ router.get('/', async (req, res) => {
         email: row.email,
         website: row.website,
         dateAccredited: row.date_accredited,
-        contacts: row.contacts,
+        contacts: [],
       })),
     });
   } catch (error) {

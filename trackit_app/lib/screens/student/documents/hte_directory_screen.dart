@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../models/hte_company.dart';
-import '../../../models/hte_company_contact.dart';
 import '../../../services/hte_directory_service.dart';
 import '../../../utils/app_colors.dart';
 import '../../../widgets/common/back_nav_header.dart';
@@ -308,20 +307,8 @@ class _CompanyDetailSheet extends StatelessWidget {
                   label:
                       'HTE Accredited: ${DateFormat('MMMM d, y').format(company.dateAccredited!)}',
                 ),
-              if (company.contacts.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'Available Contact Person',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                for (final contact in company.contacts)
-                  _ContactRow(contact: contact),
-              ],
+              // Contact persons are not shown to students (the companies'
+              // privacy request); the server no longer sends them.
               const SizedBox(height: 8),
             ],
           ),
@@ -350,41 +337,6 @@ class _DetailRow extends StatelessWidget {
               label,
               style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ContactRow extends StatelessWidget {
-  final HteCompanyContact contact;
-
-  const _ContactRow({required this.contact});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          const Icon(Icons.person_outline, size: 16, color: AppColors.primaryMaroon),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              contact.name,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-            ),
-          ),
-          Row(
-            children: [
-              const Icon(Icons.phone_outlined, size: 14, color: AppColors.textSecondary),
-              const SizedBox(width: 4),
-              Text(
-                contact.phone,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
-              ),
-            ],
           ),
         ],
       ),
