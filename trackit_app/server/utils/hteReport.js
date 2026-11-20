@@ -13,8 +13,9 @@ const STUDENT_COLUMNS = [
   { key: 'industry', label: 'Industry', width: 18, pdf: 70 },
   { key: 'contacts', label: 'Contact Person(s)', width: 26, pdf: 95 },
   { key: 'student', label: 'Student', width: 24, pdf: 95 },
-  { key: 'section', label: 'Program - Section', width: 16, pdf: 65 },
-  { key: 'supervisor', label: 'Supervisor / Contact', width: 26, pdf: 70 },
+  { key: 'section', label: 'Program - Section', width: 16, pdf: 60 },
+  { key: 'department', label: 'Department', width: 18, pdf: 60 },
+  { key: 'supervisor', label: 'Supervisor & Contact', width: 26, pdf: 75 },
   { key: 'hours', label: 'Credited / Required Hrs', width: 14, pdf: 55 },
 ];
 
@@ -55,13 +56,14 @@ function toRows(companies) {
       contacts: (c.contacts || []).map((ct) => `${ct.name} (${ct.phone})`).join('; '),
     };
     if (c.students.length === 0) {
-      rows.push({ ...base, student: 'No student placed', section: '', supervisor: '', hours: '' });
+      rows.push({ ...base, student: 'No student placed', section: '', department: '', supervisor: '', hours: '' });
     }
     for (const s of c.students) {
       rows.push({
         ...base,
         student: s.name,
         section: `${s.program} - ${s.section}`,
+        department: s.department || '',
         supervisor: [s.supervisor, s.contactNumber].filter(Boolean).join(' · '),
         hours: `${formatHours(s.completedHours)} / ${formatHours(s.requiredHours)}`,
       });

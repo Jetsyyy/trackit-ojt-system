@@ -2,7 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const { getCurrentAcademicYear } = require('../utils/classHelpers');
-const { regionOf, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
+const { regionOf, matchesLocation, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
 const { sendHteReport } = require('../utils/hteReport');
 
 const router = express.Router();
@@ -62,11 +62,12 @@ router.get('/', async (req, res) => {
 router.get('/locations', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT location, COUNT(*)::int AS count FROM hte_companies GROUP BY location ORDER BY location`,
+      `SELECT location, address, COUNT(*)::int AS count FROM hte_companies
+       GROUP BY location, address ORDER BY location`,
     );
     const regions = new Map();
     for (const row of result.rows) {
-      const region = regionOf(row.location);
+      const region = regionOf(row.location, row.address);
       regions.set(region, (regions.get(region) || 0) + row.count);
     }
     res.json({
@@ -76,7 +77,7 @@ router.get('/locations', async (req, res) => {
         .sort((a, b) => a.name.localeCompare(b.name)),
       locations: result.rows
         .filter((r) => r.location)
-        .map((r) => ({ name: r.location, region: regionOf(r.location), count: r.count })),
+        .map((r) => ({ name: r.location, region: regionOf(r.location, r.address), count: r.count })),
     });
   } catch (error) {
     console.error('Get HTE locations error:', error);
@@ -96,12 +97,11 @@ router.get('/report', async (req, res) => {
     const locations = location.split(',').map((s) => s.trim()).filter(Boolean);
     const sections = (req.query.sections || '').toString().split(',').map((s) => s.trim()).filter(Boolean);
     const withStudents = req.query.type !== 'info';
-    let companies = await loadDirectoryWithPlacements({
-      academicYear,
-      location: locations.length === 1 ? locations[0] : '',
-    });
+    let companies = await loadDirectoryWithPlacements({ academicYear, location: locations.join(',') });
+    // Several locations: keep each location's companies together.
     if (locations.length > 1) {
-      companies = companies.filter((c) => locations.some((l) => c.location === l || c.region === l));
+      const groupOf = (c) => locations.findIndex((l) => matchesLocation(c, l));
+      companies = [...companies].sort((a, b) => groupOf(a) - groupOf(b) || a.name.localeCompare(b.name));
     }
     if (sections.length > 0) {
       companies = companies.map((c) => ({
@@ -233,6 +233,15 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const companyId = Number(req.params.id);
+    const deployed = await pool.query('SELECT COUNT(*)::int AS n FROM students WHERE company_id = $1', [companyId]);
+    if (deployed.rows[0].n > 0) {
+      const n = deployed.rows[0].n;
+      return res.status(409).json({
+        success: false,
+        message: `This company can't be removed while ${n} student${n === 1 ? ' is' : 's are'} deployed there.`,
+        deployedStudents: n,
+      });
+    }
     const result = await pool.query('DELETE FROM hte_companies WHERE id = $1 RETURNING id', [
       companyId,
     ]);

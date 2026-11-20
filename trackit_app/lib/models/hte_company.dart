@@ -7,6 +7,9 @@ class HtePlacement {
   final String name;
   final String program;
   final String section;
+
+  /// Department at the company the student is assigned to.
+  final String? department;
   final String? supervisor;
   final String? contactNumber;
   final double completedHours;
@@ -17,6 +20,7 @@ class HtePlacement {
     required this.name,
     required this.program,
     required this.section,
+    this.department,
     this.supervisor,
     this.contactNumber,
     required this.completedHours,
@@ -29,6 +33,7 @@ class HtePlacement {
       name: json['name'] as String,
       program: json['program'] as String? ?? '',
       section: json['section'] as String? ?? '',
+      department: json['department'] as String?,
       supervisor: json['supervisor'] as String?,
       contactNumber: json['contactNumber'] as String?,
       completedHours: (json['completedHours'] as num? ?? 0).toDouble(),

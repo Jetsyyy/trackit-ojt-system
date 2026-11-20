@@ -28,7 +28,20 @@ class ArchiveStatus {
   final String? nextYear;
   final bool alreadyArchived;
 
-  const ArchiveStatus({this.activeYear, this.nextYear, required this.alreadyArchived});
+  /// The active year's records: companies with deployed students,
+  /// approved students, and sections.
+  final int companies;
+  final int students;
+  final int sections;
+
+  const ArchiveStatus({
+    this.activeYear,
+    this.nextYear,
+    required this.alreadyArchived,
+    this.companies = 0,
+    this.students = 0,
+    this.sections = 0,
+  });
 }
 
 class ArchiveResult {
@@ -51,6 +64,7 @@ class HteSnapshotSummary {
   final String? archivedBy;
   final int companies;
   final int students;
+  final int sections;
 
   const HteSnapshotSummary({
     required this.academicYear,
@@ -58,6 +72,7 @@ class HteSnapshotSummary {
     this.archivedBy,
     required this.companies,
     required this.students,
+    this.sections = 0,
   });
 }
 
@@ -111,6 +126,9 @@ class HttpAdminArchiveService implements AdminArchiveService {
       activeYear: response['activeYear'] as String?,
       nextYear: response['nextYear'] as String?,
       alreadyArchived: response['alreadyArchived'] as bool? ?? false,
+      companies: ((response['current'] as Map?)?['companies'] as num? ?? 0).toInt(),
+      students: ((response['current'] as Map?)?['students'] as num? ?? 0).toInt(),
+      sections: ((response['current'] as Map?)?['sections'] as num? ?? 0).toInt(),
     );
   }
 
@@ -139,8 +157,9 @@ class HttpAdminArchiveService implements AdminArchiveService {
         academicYear: r['academicYear'] as String,
         archivedAt: DateTime.parse(r['archivedAt'] as String).toLocal(),
         archivedBy: r['archivedBy'] as String?,
-        companies: (totals['companiesWithStudents'] as num? ?? 0).toInt(),
+        companies: (totals['companies'] as num? ?? 0).toInt(),
         students: (totals['students'] as num? ?? 0).toInt(),
+        sections: (totals['sections'] as num? ?? 0).toInt(),
       );
     }).toList();
   }

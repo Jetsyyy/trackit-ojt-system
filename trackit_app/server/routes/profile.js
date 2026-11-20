@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
     const profileResult = await pool.query(
       `SELECT sp.phone,
               sp.company_name, sp.company_address, sp.company_industry,
-              sp.company_supervisor_name, sp.company_contact_number,
+              sp.company_supervisor_name, sp.company_contact_number, sp.company_department,
               sp.company_latitude, sp.company_longitude, sp.ojt_start_date,
               a.name AS adviser_name, a.position AS adviser_position,
               a.email AS adviser_email, a.phone AS adviser_phone
@@ -90,6 +90,7 @@ router.get('/', async (req, res) => {
               industry: profile.company_industry,
               supervisorName: profile.company_supervisor_name,
               contactNumber: profile.company_contact_number,
+              department: profile.company_department,
               latitude: profile.company_latitude,
               longitude: profile.company_longitude,
               ojtStartDate: profile.ojt_start_date,
@@ -250,6 +251,7 @@ router.post('/company', async (req, res) => {
       longitude,
       ojtStartDate,
     } = req.body;
+    const department = (req.body.department || '').toString().trim() || null;
     if (!name || !address || !industry || !supervisorName || !contactNumber) {
       return res
         .status(400)
@@ -276,12 +278,12 @@ router.post('/company', async (req, res) => {
       `INSERT INTO student_profiles
          (student_id, company_name, company_address, company_industry,
           company_supervisor_name, company_contact_number,
-          company_latitude, company_longitude, ojt_start_date, company_confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+          company_latitude, company_longitude, ojt_start_date, company_department, company_confirmed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
        ON CONFLICT (student_id)
        DO UPDATE SET company_name = $2, company_address = $3, company_industry = $4,
          company_supervisor_name = $5, company_contact_number = $6,
-         company_latitude = $7, company_longitude = $8, ojt_start_date = $9,
+         company_latitude = $7, company_longitude = $8, ojt_start_date = $9, company_department = $10,
          company_confirmed_at = now(), updated_at = now()`,
       [
         req.studentId,
@@ -293,6 +295,7 @@ router.post('/company', async (req, res) => {
         latitude ?? null,
         longitude ?? null,
         ojtStartDate ?? null,
+        department,
       ],
     );
 
@@ -325,10 +328,18 @@ router.patch('/company/supervisor', async (req, res) => {
     }
     const updated = await pool.query(
       `UPDATE student_profiles
-       SET company_supervisor_name = $1, company_contact_number = $2, updated_at = now()
+       SET company_supervisor_name = $1, company_contact_number = $2,
+           company_department = CASE WHEN $4::boolean THEN $5 ELSE company_department END,
+           updated_at = now()
        WHERE student_id = $3 AND company_confirmed_at IS NOT NULL
        RETURNING student_id`,
-      [supervisorName, contactNumber, req.studentId],
+      [
+        supervisorName,
+        contactNumber,
+        req.studentId,
+        req.body.department !== undefined,
+        (req.body.department || '').toString().trim() || null,
+      ],
     );
     if (updated.rows.length === 0) {
       return res.status(400).json({

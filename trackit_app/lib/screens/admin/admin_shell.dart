@@ -4,10 +4,10 @@ import '../../services/api_client.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/common/desk_ui.dart';
 import '../../widgets/common/trackit_sidebar.dart';
-import 'admin_archive_screen.dart';
 import 'admin_profile_screen.dart';
 import 'admin_requirements_screen.dart';
 import 'desk/admin_announcements_desk.dart';
+import 'desk/admin_archive_desk.dart';
 import 'desk/admin_dashboard_desk.dart';
 import 'desk/admin_documents_desk.dart';
 import 'desk/admin_faculty_desk.dart';
@@ -112,7 +112,7 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
-    // Older pages (Official Requirements, Archive) keep their own layout,
+    // The older Official Requirements list (narrow windows) keeps its layout,
     // padded onto the warm page background.
     Widget padded(Widget child) => DeskBackdrop(
           child: Padding(padding: const EdgeInsets.fromLTRB(28, 28, 28, 20), child: child),
@@ -130,7 +130,7 @@ class _AdminShellState extends State<AdminShell> {
           ? AdminDocumentsDesk(client: widget.client)
           : padded(AdminRequirementsScreen(client: widget.client)),
       AdminAnnouncementsDesk(client: widget.client),
-      padded(AdminArchiveScreen(client: widget.client)),
+      AdminArchiveDesk(client: widget.client, adminEmail: _admin.email),
       AdminProfileScreen(client: widget.client, admin: _admin, onProfileUpdated: _updateAdmin),
     ];
     final body = IndexedStack(index: _index, children: pages);

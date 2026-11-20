@@ -90,10 +90,33 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
       ? c.students
       : c.students.where((s) => _sections.contains('${s.program} - ${s.section}')).toList();
 
+  static String _placeKey(String text) => text
+      .toLowerCase()
+      .replaceAll('ñ', 'n')
+      .replaceAll(RegExp(r'\bsta\.?\s'), 'santa ')
+      .replaceAll(RegExp(r'\bsto\.?\s'), 'santo ')
+      .replaceAll(RegExp(r'\bcity\b'), '')
+      .replaceAll(RegExp(r'[^a-z\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// Index of the selected location [c] belongs to, or -1. The region the
+  /// server derived from the company's location and address comes first,
+  /// so "Laguna" also finds companies saved as just "San Pablo City".
+  int _locationGroup(HteCompany c) {
+    final picked = _locations.toList()..sort();
+    final parts = '${c.location},${c.address}'.split(',').map(_placeKey).toSet();
+    for (var i = 0; i < picked.length; i++) {
+      final w = _placeKey(picked[i]);
+      if (_placeKey(c.region) == w || _placeKey(c.location) == w || parts.contains(w)) return i;
+    }
+    return -1;
+  }
+
   List<HteCompany> get _filtered {
     final q = _query.trim().toLowerCase();
     var list = _companies.where((c) {
-      if (_locations.isNotEmpty && !_locations.contains(c.region) && !_locations.contains(c.location)) {
+      if (_locations.isNotEmpty && _locationGroup(c) < 0) {
         return false;
       }
       if (_sections.isNotEmpty && _studentsOf(c).isEmpty) return false;
@@ -113,6 +136,13 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
       case _Sort.none:
         list = list.where((c) => c.students.isEmpty).toList()
           ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+    if (_locations.length > 1) {
+      final order = {for (final c in list) c.id: list.indexOf(c)};
+      list.sort((a, b) {
+        final g = _locationGroup(a).compareTo(_locationGroup(b));
+        return g != 0 ? g : order[a.id]!.compareTo(order[b.id]!);
+      });
     }
     return list;
   }
@@ -230,8 +260,11 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
                                   padding: EdgeInsets.symmetric(vertical: 30),
                                   child: Text('No companies match these filters.', textAlign: TextAlign.center),
                                 ),
-                              for (final c in shown) ...[
-                                _companyRow(c),
+                              for (var i = 0; i < shown.length; i++) ...[
+                                if (_locations.length > 1 &&
+                                    (i == 0 || _locationGroup(shown[i]) != _locationGroup(shown[i - 1])))
+                                  _locationHeader(shown[i], filtered),
+                                _companyRow(shown[i]),
                                 const SizedBox(height: 8),
                               ],
                               const SizedBox(height: 10),
@@ -384,6 +417,34 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
     );
   }
 
+  /// "LAGUNA · 12 companies · 30 students" above each location's companies.
+  Widget _locationHeader(HteCompany first, List<HteCompany> filtered) {
+    final group = _locationGroup(first);
+    final picked = _locations.toList()..sort();
+    final inGroup = filtered.where((c) => _locationGroup(c) == group).toList();
+    final students = inGroup.fold<int>(0, (s, c) => s + _studentsOf(c).length);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 8),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on, size: 16, color: DeskColors.maroon),
+          const SizedBox(width: 6),
+          Text(
+            group >= 0 ? picked[group].toUpperCase() : 'OTHER',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: DeskColors.heading, letterSpacing: 0.4),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${inGroup.length} compan${inGroup.length == 1 ? 'y' : 'ies'} · $students student${students == 1 ? '' : 's'}',
+            style: const TextStyle(fontSize: 11, color: DeskColors.muted),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(child: Divider(height: 1, color: Color(0xFFE6CFD2))),
+        ],
+      ),
+    );
+  }
+
   Widget _tableHeader() {
     const style = TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF333333));
     return Container(
@@ -484,11 +545,16 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
                 label: const Text('Edit company', style: TextStyle(fontSize: 11)),
                 style: TextButton.styleFrom(foregroundColor: DeskColors.maroon),
               ),
-              TextButton.icon(
-                onPressed: () => _delete(c),
-                icon: const Icon(Icons.delete_outline, size: 14),
-                label: const Text('Remove', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFFC62828)),
+              Tooltip(
+                message: c.students.isEmpty
+                    ? 'Remove this company'
+                    : "Can't be removed while students are deployed here",
+                child: TextButton.icon(
+                  onPressed: c.students.isEmpty ? () => _delete(c) : null,
+                  icon: const Icon(Icons.delete_outline, size: 14),
+                  label: const Text('Remove', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(foregroundColor: const Color(0xFFC62828)),
+                ),
               ),
             ],
           ),
@@ -504,40 +570,25 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
               child: Column(
                 children: [
                   Container(
-                    color: const Color(0xFFF2F2F2),
+                    color: const Color(0xFFF5E6E8),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     child: const Row(
                       children: [
                         Expanded(flex: 4, child: Text('Student Name', style: head)),
                         Expanded(flex: 2, child: Text('Section', style: head)),
-                        Expanded(flex: 4, child: Text('Supervisor', style: head)),
-                        Expanded(flex: 3, child: Text('Contact Number', style: head)),
+                        Expanded(flex: 3, child: Text('Department', style: head)),
+                        Expanded(flex: 4, child: Text('Supervisor & Contact', style: head)),
                       ],
                     ),
                   ),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 180),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: students.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1, color: Color(0xFFEDEDED)),
-                      itemBuilder: (context, i) {
-                        final s = students[i];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          child: Row(
-                            children: [
-                              Expanded(flex: 4, child: Text(s.name, style: cell)),
-                              Expanded(
-                                flex: 2,
-                                child: Text('${s.program} - ${s.section}', style: cell.copyWith(fontWeight: FontWeight.w700, fontSize: 10)),
-                              ),
-                              Expanded(flex: 4, child: Text(s.supervisor ?? '--', style: cell)),
-                              Expanded(flex: 3, child: Text(s.contactNumber ?? '--', style: cell)),
-                            ],
-                          ),
-                        );
-                      },
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          for (final g in _groups(students)) _studentGroup(g, cell),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -555,6 +606,109 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Students grouped by department + supervisor, as in the mockup: the
+  /// department and supervisor cells span their students' rows.
+  List<List<HtePlacement>> _groups(List<HtePlacement> students) {
+    String norm(String? v) => (v ?? '').trim().toLowerCase();
+    final sorted = [...students]
+      ..sort((a, b) {
+        final d = norm(a.department).compareTo(norm(b.department));
+        if (d != 0) return d;
+        final s = norm(a.supervisor).compareTo(norm(b.supervisor));
+        return s != 0 ? s : a.name.compareTo(b.name);
+      });
+    final groups = <List<HtePlacement>>[];
+    for (final s in sorted) {
+      final last = groups.isEmpty ? null : groups.last.first;
+      if (last != null && norm(last.department) == norm(s.department) && norm(last.supervisor) == norm(s.supervisor)) {
+        groups.last.add(s);
+      } else {
+        groups.add([s]);
+      }
+    }
+    return groups;
+  }
+
+  Widget _studentGroup(List<HtePlacement> group, TextStyle cell) {
+    final first = group.first;
+    const line = BorderSide(color: Color(0xFFEDE3E4));
+    String orDash(String? v) => (v == null || v.trim().isEmpty) ? '--' : v.trim();
+    return Container(
+      decoration: const BoxDecoration(border: Border(bottom: line)),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 6,
+              child: Column(
+                children: [
+                  for (var i = 0; i < group.length; i++)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(border: i == 0 ? null : const Border(top: line)),
+                      child: Row(
+                        children: [
+                          Expanded(flex: 4, child: Text(group[i].name, style: cell)),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              '${group[i].program} - ${group[i].section}',
+                              style: cell.copyWith(fontWeight: FontWeight.w700, fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                alignment: Alignment.centerLeft,
+                decoration: const BoxDecoration(border: Border(left: line)),
+                child: Text(orDash(first.department), style: cell.copyWith(fontWeight: FontWeight.w700)),
+              ),
+            ),
+            Expanded(
+              flex: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                alignment: Alignment.centerLeft,
+                decoration: const BoxDecoration(border: Border(left: line)),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(orDash(first.supervisor), style: cell.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(orDash(first.contactNumber), style: cell.copyWith(color: const Color(0xFF555555))),
+                    if (group.length > 1) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1E6E7),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${group.length} students',
+                          style: const TextStyle(fontSize: 9.5, color: Color(0xFF7A5A5E)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

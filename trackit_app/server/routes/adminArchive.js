@@ -332,6 +332,24 @@ router.get('/export', async (req, res) => {
 
 // ---------- Archive the academic year (System Revisions item 20) ----------
 
+// Counts for the active year's records (Archive page "Current Records"):
+// companies with deployed students, approved students, and sections.
+async function currentRecordCounts(academicYear) {
+  const result = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM instructor_classes WHERE academic_year = $1) AS sections,
+       COUNT(s.id)::int AS students,
+       COUNT(DISTINCT s.company_id)::int AS companies
+     FROM students s
+     JOIN student_profiles sp ON sp.student_id = s.id
+     JOIN instructor_classes cl ON cl.id = sp.class_id
+     WHERE cl.academic_year = $1 AND s.approval_status = 'approved'`,
+    [academicYear],
+  );
+  const r = result.rows[0];
+  return { companies: r.companies, students: r.students, sections: r.sections };
+}
+
 // The active year and whether it can be archived, for the Archive screen.
 router.get('/status', async (req, res) => {
   try {
@@ -344,6 +362,7 @@ router.get('/status', async (req, res) => {
       activeYear,
       nextYear: nextAcademicYear(activeYear),
       alreadyArchived: archived.rows.length > 0,
+      current: activeYear ? await currentRecordCounts(activeYear) : { companies: 0, students: 0, sections: 0 },
     });
   } catch (error) {
     console.error('Get archive status error:', error);
@@ -386,13 +405,29 @@ router.post('/academic-year', async (req, res) => {
     }
 
     const companies = await loadDirectoryWithPlacements({ academicYear: activeYear });
+    const counts = await currentRecordCounts(activeYear);
+    const sections = (
+      await pool.query(
+        `SELECT cl.program, cl.section, a.name AS instructor, COUNT(sp.student_id)::int AS students
+         FROM instructor_classes cl
+         LEFT JOIN advisers a ON a.id = cl.instructor_id
+         LEFT JOIN student_profiles sp ON sp.class_id = cl.id
+         WHERE cl.academic_year = $1
+         GROUP BY cl.id, a.name ORDER BY cl.program, cl.section`,
+        [activeYear],
+      )
+    ).rows;
     const snapshot = {
       academicYear: activeYear,
       companies,
+      sections,
       totals: {
-        companies: companies.length,
+        companies: counts.companies,
+        directoryCompanies: companies.length,
         companiesWithStudents: companies.filter((c) => c.students.length > 0).length,
-        students: companies.reduce((sum, c) => sum + c.students.length, 0),
+        students: counts.students,
+        deployedStudents: companies.reduce((sum, c) => sum + c.students.length, 0),
+        sections: counts.sections,
       },
     };
 
@@ -430,7 +465,10 @@ router.post('/academic-year', async (req, res) => {
 router.get('/hte-snapshots', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT a.academic_year, a.archived_at, a.snapshot -> 'totals' AS totals, ad.name AS archived_by_name
+      `SELECT a.academic_year, a.archived_at, a.snapshot -> 'totals' AS totals, ad.name AS archived_by_name,
+              (SELECT COUNT(DISTINCT (st ->> 'program') || ' - ' || (st ->> 'section'))::int
+               FROM jsonb_array_elements(a.snapshot -> 'companies') co,
+                    jsonb_array_elements(co -> 'students') st) AS section_count
        FROM hte_archives a LEFT JOIN admins ad ON ad.id = a.archived_by
        ORDER BY a.academic_year DESC`,
     );
@@ -440,7 +478,12 @@ router.get('/hte-snapshots', async (req, res) => {
         academicYear: r.academic_year,
         archivedAt: r.archived_at,
         archivedBy: r.archived_by_name,
-        totals: r.totals,
+        totals: {
+          ...(r.totals || {}),
+          companies: r.totals?.companiesWithStudents ?? r.totals?.companies ?? 0,
+          students: r.totals?.students ?? 0,
+          sections: r.totals?.sections ?? r.section_count ?? 0,
+        },
       })),
     });
   } catch (error) {

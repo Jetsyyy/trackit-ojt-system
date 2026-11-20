@@ -9,6 +9,9 @@ class CompanyDetails {
   final String supervisorName;
   final String contactNumber;
 
+  /// Department the student is assigned to at the company.
+  final String department;
+
   /// Legacy geofence center from the retired clock in/out feature; kept
   /// only so older records still parse.
   final double? latitude;
@@ -26,6 +29,7 @@ class CompanyDetails {
     required this.industry,
     required this.supervisorName,
     required this.contactNumber,
+    this.department = '',
     this.latitude,
     this.longitude,
     this.ojtStartDate,
@@ -38,6 +42,7 @@ class CompanyDetails {
       industry: json['industry'] as String? ?? '',
       supervisorName: json['supervisorName'] as String? ?? '',
       contactNumber: json['contactNumber'] as String? ?? '',
+      department: json['department'] as String? ?? '',
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       ojtStartDate: json['ojtStartDate'] != null
@@ -52,6 +57,7 @@ class CompanyDetails {
     'industry': industry,
     'supervisorName': supervisorName,
     'contactNumber': contactNumber,
+    'department': department,
     'latitude': latitude,
     'longitude': longitude,
     // Date only -- a calendar day, not a moment in time.

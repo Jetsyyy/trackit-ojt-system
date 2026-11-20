@@ -42,6 +42,7 @@ class _ConfirmCompanyDetailsScreenState
   late final TextEditingController _industryController;
   late final TextEditingController _supervisorController;
   late final TextEditingController _contactController;
+  late final TextEditingController _departmentController;
   final FocusNode _nameFocus = FocusNode();
   bool _saving = false;
   late DateTime _ojtStartDate;
@@ -61,6 +62,9 @@ class _ConfirmCompanyDetailsScreenState
     _contactController = TextEditingController(
       text: existing?.contactNumber ?? '',
     );
+    _departmentController = TextEditingController(
+      text: existing?.department ?? '',
+    );
     _ojtStartDate = existing?.ojtStartDate ?? DateTime.now();
   }
 
@@ -71,6 +75,7 @@ class _ConfirmCompanyDetailsScreenState
     _industryController.dispose();
     _supervisorController.dispose();
     _contactController.dispose();
+    _departmentController.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -158,6 +163,7 @@ class _ConfirmCompanyDetailsScreenState
           industry: _industryController.text.trim(),
           supervisorName: _supervisorController.text.trim(),
           contactNumber: _contactController.text.trim(),
+          department: _departmentController.text.trim(),
           ojtStartDate: _ojtStartDate,
         ),
       );
@@ -179,9 +185,10 @@ class _ConfirmCompanyDetailsScreenState
       await widget.service.updateSupervisor(
         supervisorName: _supervisorController.text.trim(),
         contactNumber: _contactController.text.trim(),
+        department: _departmentController.text.trim(),
       );
       if (!mounted) return;
-      Navigator.of(context).pop('Supervisor updated.');
+      Navigator.of(context).pop('Supervisor and department updated.');
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -280,7 +287,20 @@ class _ConfirmCompanyDetailsScreenState
                       ),
                     ),
                   const SizedBox(height: 20),
-                  const _SectionLabel('Supervisor'),
+                  const _SectionLabel('Department & Supervisor'),
+                  // The department can change after deployment, like the
+                  // supervisor, so it stays editable.
+                  TextFormField(
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    controller: _departmentController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Department',
+                      hintText: 'e.g. Accounting, IT Department',
+                    ),
+                    validator: (v) => _required(v, 'Department'),
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     autovalidateMode: AutovalidateMode.onUserInteraction,
                     controller: _supervisorController,

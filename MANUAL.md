@@ -142,6 +142,7 @@ Requires `trackit_app/.env` (see `trackit_app/.env.example`) with
 26. `migration_account_activity.sql` (Profile: last password change, login and account activity)
 27. `migration_final_documents_ready.sql` (Final Documents: "I have all the Documents Ready")
 28. `migration_requirement_details.sql` (Admin Documents: photocopies required, last updated / updated by, template size)
+29. `migration_company_department.sql` (HTE Directory: the student's department at their company)
 
 All migrations are non-destructive (`ADD COLUMN IF NOT EXISTS`, etc.) and
 safe to re-run. Migrations 4 and 12 belong to the retired clock in/out

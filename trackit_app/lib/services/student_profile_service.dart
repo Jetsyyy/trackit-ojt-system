@@ -35,6 +35,7 @@ abstract class StudentProfileService {
   Future<StudentProfile> updateSupervisor({
     required String supervisorName,
     required String contactNumber,
+    String? department,
   });
 
   /// Matching companies already saved in the system, for suggestions
@@ -119,6 +120,7 @@ class MockStudentProfileService implements StudentProfileService {
   Future<StudentProfile> updateSupervisor({
     required String supervisorName,
     required String contactNumber,
+    String? department,
   }) async => _profile;
 
   @override
@@ -186,10 +188,15 @@ class HttpStudentProfileService implements StudentProfileService {
   Future<StudentProfile> updateSupervisor({
     required String supervisorName,
     required String contactNumber,
+    String? department,
   }) async {
     await client.patch(
       '/api/profile/company/supervisor',
-      body: {'supervisorName': supervisorName, 'contactNumber': contactNumber},
+      body: {
+        'supervisorName': supervisorName,
+        'contactNumber': contactNumber,
+        'department': ?department,
+      },
     );
     return getProfile();
   }

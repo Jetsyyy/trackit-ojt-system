@@ -13,18 +13,110 @@ const METRO_MANILA = [
   'pateros', 'quezon city', 'san juan', 'taguig', 'valenzuela',
 ];
 
-// "Calamba City, Laguna" -> "Laguna"; "Makati City" -> "Metro Manila";
-// empty -> "Unspecified".
-function regionOf(location) {
-  const text = (location || '').trim();
-  if (!text) return 'Unspecified';
-  const parts = text.split(',').map((p) => p.trim()).filter(Boolean);
-  if (parts.length > 1) return parts[parts.length - 1];
-  const lower = text.toLowerCase().replace(/\s+city$/, '');
-  if (METRO_MANILA.some((city) => lower === city || lower.startsWith(`${city} `) || text.toLowerCase() === city)) {
-    return 'Metro Manila';
+// Provinces a company can be filed under, and the cities/municipalities
+// (CALABARZON, where most partner companies are) that belong to each, so
+// a company saved as just "San Pablo City" still counts as Laguna.
+const PROVINCES = ['Laguna', 'Batangas', 'Cavite', 'Rizal', 'Quezon', 'Bulacan', 'Pampanga', 'Metro Manila'];
+const CITY_PROVINCE = {
+  Laguna: [
+    'san pablo', 'calamba', 'santa rosa', 'binan', 'cabuyao', 'san pedro', 'los banos', 'santa cruz',
+    'bay', 'calauan', 'alaminos', 'nagcarlan', 'liliw', 'victoria', 'pila', 'pagsanjan', 'lumban',
+    'paete', 'pakil', 'pangil', 'siniloan', 'famy', 'mabitac', 'majayjay', 'magdalena', 'luisiana',
+    'cavinti', 'kalayaan', 'santa maria',
+  ],
+  Batangas: [
+    'batangas', 'lipa', 'tanauan', 'santo tomas', 'malvar', 'nasugbu', 'bauan', 'rosario', 'ibaan',
+    'san jose', 'lemery', 'balayan', 'calaca', 'calatagan', 'taal', 'mabini', 'padre garcia',
+  ],
+  Cavite: [
+    'bacoor', 'imus', 'dasmarinas', 'general trias', 'tagaytay', 'cavite', 'trece martires', 'silang',
+    'carmona', 'kawit', 'tanza', 'naic', 'noveleta', 'general mariano alvarez', 'indang', 'alfonso',
+  ],
+  Rizal: ['antipolo', 'cainta', 'taytay', 'binangonan', 'san mateo', 'rodriguez', 'montalban', 'angono', 'morong', 'tanay', 'teresa'],
+  Quezon: ['lucena', 'tayabas', 'sariaya', 'candelaria', 'tiaong', 'pagbilao', 'lucban', 'dolores'],
+};
+
+// Lower-case, no accents, "Sta."/"Sto." spelled out, no "City"/"City of".
+function placeKey(text) {
+  return (text || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bsta\.?\s/g, 'santa ')
+    .replace(/\bsto\.?\s/g, 'santo ')
+    .replace(/\bcity of\b/g, '')
+    .replace(/\bcity\b/g, '')
+    .replace(/\bprovince\b/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function placeParts(...texts) {
+  return texts.flatMap((t) => (t || '').toString().split(',')).map(placeKey).filter(Boolean);
+}
+
+// The province (or Metro Manila) a company is in, read from its location
+// and, when that doesn't say, its address: "Calamba City, Laguna" and
+// "San Pablo City" -> "Laguna"; "Makati City" -> "Metro Manila"; nothing
+// to go on -> "Unspecified".
+function regionOf(location, address) {
+  // Quezon City is in Metro Manila, not Quezon province (placeKey drops
+  // the word City, so check it first).
+  if (/\bquezon city\b/i.test(`${location || ''} ${address || ''}`)) return 'Metro Manila';
+  const parts = placeParts(location, address);
+  const named = [...parts].reverse();
+  for (const p of named) {
+    if (p === 'ncr' || p === 'metro manila' || p === 'national capital region') return 'Metro Manila';
+    // "Laguna" or a part that ends with it, like "San Pablo Laguna".
+    const province = PROVINCES.find((name) => p === placeKey(name) || p.endsWith(` ${placeKey(name)}`));
+    if (province) return province;
   }
-  return text;
+  for (const p of parts) {
+    if (METRO_MANILA.some((city) => p === placeKey(city))) return 'Metro Manila';
+    for (const [province, cities] of Object.entries(CITY_PROVINCE)) {
+      if (cities.includes(p)) return province;
+    }
+  }
+  const text = (location || '').trim();
+  return text ? text.split(',').pop().trim() : 'Unspecified';
+}
+
+// True when a company matches one location filter value: its region, its
+// location, or any part of its location/address (e.g. "Laguna",
+// "San Pablo City"), ignoring case and accents.
+function matchesLocation(company, wanted) {
+  const w = placeKey(wanted);
+  if (!w) return true;
+  if (placeKey(company.region) === w || placeKey(company.location) === w) return true;
+  return placeParts(company.location, company.address).includes(w);
+}
+
+// Company names compared loosely: case, punctuation and suffixes like
+// "Inc." or "Corp." ignored, so "Community General Hospital" finds
+// "Community General Hospital of San Pablo City, Inc.".
+function companyKey(name) {
+  return (name || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(the|inc|incorporated|corp|corporation|co|company|ltd|limited)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sameCompany(a, b) {
+  const x = companyKey(a);
+  const y = companyKey(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  // The shorter name must be specific: at least two words, 15+ letters.
+  return short.length >= 15 && short.includes(' ') && long.startsWith(`${short} `);
 }
 
 // Links a student to the directory entry for the company they entered,
@@ -34,11 +126,8 @@ function regionOf(location) {
 async function linkStudentToHte(studentId, { name, address, industry }, db = pool) {
   const cleanName = (name || '').trim();
   if (!cleanName) return null;
-  const existing = await db.query(
-    'SELECT id FROM hte_companies WHERE LOWER(TRIM(name)) = LOWER($1) ORDER BY id LIMIT 1',
-    [cleanName],
-  );
-  let companyId = existing.rows[0]?.id;
+  const all = await db.query("SELECT id, name, source FROM hte_companies ORDER BY (source = 'admin') DESC, id");
+  let companyId = all.rows.find((c) => sameCompany(c.name, cleanName))?.id;
   if (!companyId) {
     const inserted = await db.query(
       `INSERT INTO hte_companies (name, industry, address, source)
@@ -82,6 +171,7 @@ async function loadDirectoryWithPlacements({ academicYear, location, search } = 
   const placements = await pool.query(
     `SELECT s.id, s.name, s.student_number, s.company_id, s.required_hours,
             sp.ojt_start_date, sp.company_supervisor_name, sp.company_contact_number,
+            sp.company_department,
             cl.program, cl.section, cl.academic_year
      FROM students s
      JOIN student_profiles sp ON sp.student_id = s.id
@@ -104,6 +194,7 @@ async function loadDirectoryWithPlacements({ academicYear, location, search } = 
       section: p.section,
       academicYear: p.academic_year,
       ojtStartDate: p.ojt_start_date,
+      department: p.company_department,
       supervisor: p.company_supervisor_name,
       contactNumber: p.company_contact_number,
       completedHours: h.completedHours,
@@ -113,14 +204,18 @@ async function loadDirectoryWithPlacements({ academicYear, location, search } = 
   }
 
   const query = (search || '').toString().trim().toLowerCase();
-  const wanted = (location || '').toString().trim();
+  const wanted = (location || '')
+    .toString()
+    .split(',')
+    .map((l) => l.trim())
+    .filter(Boolean);
   return companies.rows
     .map((c) => ({
       id: Number(c.id),
       name: c.name,
       industry: c.industry,
       location: c.location,
-      region: regionOf(c.location),
+      region: regionOf(c.location, c.address),
       address: c.address,
       email: c.email,
       website: c.website,
@@ -129,7 +224,7 @@ async function loadDirectoryWithPlacements({ academicYear, location, search } = 
       contacts: c.contacts,
       students: byCompany.get(Number(c.id)) || [],
     }))
-    .filter((c) => !wanted || c.location === wanted || c.region === wanted)
+    .filter((c) => wanted.length === 0 || wanted.some((w) => matchesLocation(c, w)))
     .filter(
       (c) =>
         !query ||
@@ -139,4 +234,4 @@ async function loadDirectoryWithPlacements({ academicYear, location, search } = 
     );
 }
 
-module.exports = { regionOf, linkStudentToHte, loadDirectoryWithPlacements };
+module.exports = { regionOf, matchesLocation, sameCompany, linkStudentToHte, loadDirectoryWithPlacements };
