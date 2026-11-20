@@ -146,15 +146,22 @@ router.post('/', async (req, res) => {
     const sectionTrimmed = section.toString().trim();
     const academicYearTrimmed = academicYear.toString().trim();
 
+    // Same program + section + year is a duplicate even when spelled
+    // differently ("4A" / "4-A" / "4 a"), so an instructor can't end up with
+    // the same section twice (Admin Side 2.3). A unique index backs this up
+    // (sql/migration_unique_sections.sql).
     const existing = await pool.query(
-      `SELECT id FROM instructor_classes
-       WHERE LOWER(program) = LOWER($1) AND LOWER(section) = LOWER($2) AND academic_year = $3`,
+      `SELECT id, program, section FROM instructor_classes
+       WHERE regexp_replace(lower(program), '[^a-z0-9]', '', 'g') = regexp_replace(lower($1), '[^a-z0-9]', '', 'g')
+         AND regexp_replace(lower(section), '[^a-z0-9]', '', 'g') = regexp_replace(lower($2), '[^a-z0-9]', '', 'g')
+         AND academic_year = $3`,
       [programTrimmed, sectionTrimmed, academicYearTrimmed],
     );
     if (existing.rows.length > 0) {
+      const e = existing.rows[0];
       return res.status(409).json({
         success: false,
-        message: 'A section with this program, section, and academic year already exists.',
+        message: `${e.program} - ${e.section} already exists for ${academicYearTrimmed}.`,
       });
     }
 
@@ -179,6 +186,9 @@ router.post('/', async (req, res) => {
       },
     });
   } catch (error) {
+    if (error && error.code === '23505' && /unique_section/.test(error.constraint || '')) {
+      return res.status(409).json({ success: false, message: 'That section already exists for this academic year.' });
+    }
     console.error('Create section error:', error);
     res.status(500).json({ success: false, message: 'Failed to create section.' });
   }

@@ -91,23 +91,17 @@ router.get('/report', async (req, res) => {
   try {
     const format = req.query.format === 'pdf' ? 'pdf' : 'xlsx';
     const academicYear = (req.query.academicYear || '').toString().trim() || (await getCurrentAcademicYear());
-    // location / sections may each be a comma-separated list (multi-select
-    // filters on the HTE Directory page). type=info leaves the students out.
+    // location may be a comma-separated list (multi-select). Sections never
+    // narrow the report (Admin Side 2.2): every student placed in the
+    // selected location is included. type=info leaves the students out.
     const location = (req.query.location || '').toString().trim();
     const locations = location.split(',').map((s) => s.trim()).filter(Boolean);
-    const sections = (req.query.sections || '').toString().split(',').map((s) => s.trim()).filter(Boolean);
     const withStudents = req.query.type !== 'info';
     let companies = await loadDirectoryWithPlacements({ academicYear, location: locations.join(',') });
     // Several locations: keep each location's companies together.
     if (locations.length > 1) {
       const groupOf = (c) => locations.findIndex((l) => matchesLocation(c, l));
       companies = [...companies].sort((a, b) => groupOf(a) - groupOf(b) || a.name.localeCompare(b.name));
-    }
-    if (sections.length > 0) {
-      companies = companies.map((c) => ({
-        ...c,
-        students: c.students.filter((s) => sections.includes(`${s.program} - ${s.section}`)),
-      }));
     }
     await sendHteReport(res, {
       format,
@@ -117,7 +111,6 @@ router.get('/report', async (req, res) => {
       subtitle: [
         `Academic Year ${academicYear || '-'}`,
         location ? `Location: ${locations.join(', ')}` : 'All locations',
-        sections.length ? `Sections: ${sections.join(', ')}` : null,
       ].filter(Boolean).join('  |  '),
       fileBase: `HTE-Report-${academicYear || 'all'}${location ? `-${location}` : ''}`,
     });

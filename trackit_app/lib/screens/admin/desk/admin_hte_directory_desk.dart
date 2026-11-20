@@ -163,7 +163,6 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
         format: format,
         location: _locations.isEmpty ? null : _locations.join(','),
         type: _withStudents ? 'students' : 'info',
-        sections: _sections.toList(),
       );
       final saved = downloadBytes(filename: file.filename ?? 'HTE-Report.$format', bytes: file.bytes);
       if (!mounted) return;
@@ -227,7 +226,11 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
     final pages = (filtered.length / _pageSize).ceil().clamp(1, 1 << 20);
     final page = _page.clamp(0, pages - 1);
     final shown = filtered.skip(page * _pageSize).take(_pageSize).toList();
-    final totalStudents = filtered.fold<int>(0, (s, c) => s + _studentsOf(c).length);
+    // The report covers every student in the selected location(s),
+    // whatever their section (Admin Side 2.2), so its count does too.
+    final totalStudents = _companies
+        .where((c) => _locations.isEmpty || _locationGroup(c) >= 0)
+        .fold<int>(0, (s, c) => s + c.students.length);
     return DeskPage(
       title: 'HTE Directory',
       onRefresh: _load,
@@ -817,16 +820,10 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
                   ],
           ),
           if (_sections.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text('Sections', style: label),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final s in _sections)
-                  _RemovableChip(label: s, onRemove: () => setState(() => _sections = {..._sections}..remove(s))),
-              ],
+            const SizedBox(height: 10),
+            const Text(
+              'Sections filter the list only; the report includes all sections in the selected location.',
+              style: TextStyle(fontSize: 10.5, color: DeskColors.muted),
             ),
           ],
           const SizedBox(height: 14),

@@ -143,6 +143,7 @@ Requires `trackit_app/.env` (see `trackit_app/.env.example`) with
 27. `migration_final_documents_ready.sql` (Final Documents: "I have all the Documents Ready")
 28. `migration_requirement_details.sql` (Admin Documents: photocopies required, last updated / updated by, template size)
 29. `migration_company_department.sql` (HTE Directory: the student's department at their company)
+30. `migration_unique_sections.sql` (Faculty: one section per program + section + academic year)
 
 All migrations are non-destructive (`ADD COLUMN IF NOT EXISTS`, etc.) and
 safe to re-run. Migrations 4 and 12 belong to the retired clock in/out
