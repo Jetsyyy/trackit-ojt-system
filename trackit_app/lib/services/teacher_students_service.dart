@@ -1,6 +1,7 @@
 import '../models/student_registration_request.dart';
 import '../models/teacher_student_detail.dart';
 import '../models/teacher_student_summary.dart';
+import '../widgets/teacher/password_reset_requests_card.dart';
 import 'api_client.dart';
 
 abstract class TeacherStudentsService {
@@ -20,12 +21,39 @@ abstract class TeacherStudentsService {
   /// Records of every assigned student (System Revisions item 14) as
   /// 'xlsx' or 'pdf'.
   Future<RawFileResponse> exportRecords({required String format});
+
+  /// Students who asked for a password reset (Forgot Password).
+  Future<List<PasswordResetRequest>> getPasswordResets();
+
+  /// Resets the student's password; returns the one-time temporary password.
+  Future<String> resetPassword(int requestId);
+
+  Future<void> dismissPasswordReset(int requestId);
 }
 
 class HttpTeacherStudentsService implements TeacherStudentsService {
   final ApiClient client;
 
   HttpTeacherStudentsService(this.client);
+
+  @override
+  Future<List<PasswordResetRequest>> getPasswordResets() async {
+    final response = await client.get('/api/teacher/students/password-resets');
+    return (response['requests'] as List<dynamic>)
+        .map((r) => PasswordResetRequest.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<String> resetPassword(int requestId) async {
+    final response = await client.post('/api/teacher/students/password-resets/$requestId/reset');
+    return response['temporaryPassword'] as String;
+  }
+
+  @override
+  Future<void> dismissPasswordReset(int requestId) async {
+    await client.post('/api/teacher/students/password-resets/$requestId/dismiss');
+  }
 
   @override
   Future<List<TeacherStudentSummary>> getStudents() async {

@@ -10,6 +10,8 @@ import '../../services/student_announcements_service.dart';
 import '../../services/weekly_submissions_service.dart';
 import '../../widgets/common/app_bottom_nav.dart';
 import '../../widgets/student/student_ui.dart';
+import '../../services/student_profile_service.dart';
+import '../../widgets/student/set_new_password_dialog.dart';
 import 'documents/documents_tab_navigator.dart';
 import 'notifications_screen.dart';
 import 'profile/profile_tab_navigator.dart';
@@ -67,6 +69,32 @@ class _StudentShellState extends State<StudentShell> {
     super.initState();
     // Loaded here so Home's preview and the bell badge have data.
     _notificationsService.load();
+    _checkPasswordReset();
+  }
+
+  /// After an instructor reset, the student must set their own password
+  /// before using the app (System Revision 4).
+  Future<void> _checkPasswordReset() async {
+    try {
+      final response = await widget.client.get('/api/profile');
+      final profile = response['profile'] as Map<String, dynamic>? ?? const {};
+      if (profile['mustChangePassword'] != true || !mounted) return;
+      final service = HttpStudentProfileService(widget.client);
+      await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => SetNewPasswordDialog(
+          save: service.changePassword,
+          onLogout: () {
+            Navigator.of(dialogContext).pop(false);
+            widget.onLoggedOut();
+          },
+        ),
+      );
+    } catch (_) {
+      // If the check fails the server still refuses to keep the temporary
+      // password forever: it stays flagged until changed.
+    }
   }
 
   @override

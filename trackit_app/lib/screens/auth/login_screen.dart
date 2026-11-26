@@ -76,6 +76,94 @@ class _LoginScreenState extends State<LoginScreen> {
     _formKey.currentState?.reset();
   }
 
+  /// Student Forgot Password (System Revision 4): send a reset request to
+  /// the student's instructor, who gives them a temporary password.
+  Future<void> _studentForgotPassword() async {
+    final email = TextEditingController(text: _emailController.text.trim());
+    String? message;
+    String? error;
+    bool sending = false;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          icon: const Icon(Icons.lock_reset, color: AppColors.primaryMaroon, size: 32),
+          title: const Text('Forgot your password?'),
+          content: SizedBox(
+            width: 380,
+            child: message != null
+                ? Text(message!)
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Enter the email you registered with. Your OJT instructor will reset your password '
+                        'and give you a temporary one; you\'ll set your own after signing in.',
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: email,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(error!, style: const TextStyle(color: AppColors.statRedIcon)),
+                      ],
+                    ],
+                  ),
+          ),
+          actions: message != null
+              ? [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(foregroundColor: AppColors.primaryMaroon),
+                    child: const Text('OK'),
+                  ),
+                ]
+              : [
+                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.primaryMaroon),
+                    onPressed: sending
+                        ? null
+                        : () async {
+                            final value = email.text.trim();
+                            if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value)) {
+                              setDialog(() => error = 'Enter a valid email.');
+                              return;
+                            }
+                            setDialog(() {
+                              sending = true;
+                              error = null;
+                            });
+                            try {
+                              final reply = await widget.authService.requestPasswordReset(value);
+                              setDialog(() => message = reply);
+                            } on ApiException catch (e) {
+                              setDialog(() {
+                                sending = false;
+                                error = e.message;
+                              });
+                            } catch (_) {
+                              setDialog(() {
+                                sending = false;
+                                error = 'Could not reach the server. Try again.';
+                              });
+                            }
+                          },
+                    child: sending
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Send request'),
+                  ),
+                ],
+        ),
+      ),
+    );
+    email.dispose();
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -153,6 +241,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // There's no self-service reset by email yet, so say who can help.
   void _forgotPassword() {
+    if (currentPortal == AppPortal.student) {
+      _studentForgotPassword();
+      return;
+    }
     final who = switch (_role) {
       SessionRole.student => 'your OJT instructor',
       SessionRole.instructor => 'the OJT coordinator (Admin)',
@@ -164,8 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
         icon: const Icon(Icons.lock_reset, color: AppColors.primaryMaroon, size: 32),
         title: const Text('Forgot your password?'),
         content: Text(
-          'Resetting a password by email isn\'t available yet. Please contact '
-          '$who to get back into your account.',
+          'Please contact $who to reset your password.',
         ),
         actions: [
           TextButton(

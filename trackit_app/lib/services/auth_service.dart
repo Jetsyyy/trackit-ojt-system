@@ -80,6 +80,13 @@ class AuthService {
     return RegisterResult(auth: await _persistAuthResponse(response));
   }
 
+  /// Forgot Password: asks the student's instructor to reset it. Returns
+  /// the server's message (the same whether or not the email exists).
+  Future<String> requestPasswordReset(String email) async {
+    final response = await client.post('/api/auth/forgot-password', body: {'email': email});
+    return response['message'] as String? ?? 'Your request was sent to your instructor.';
+  }
+
   Future<AuthResult> login({required String email, required String password}) async {
     final response = await client.post(
       '/api/auth/login',

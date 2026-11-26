@@ -26,7 +26,8 @@ const upload = multer({
 router.get('/', async (req, res) => {
   try {
     const studentResult = await pool.query(
-      `SELECT name, email, course, section, student_number, year_level, avatar_url, name_changed_at
+      `SELECT name, email, course, section, student_number, year_level, avatar_url, name_changed_at,
+              must_change_password
        FROM students
        WHERE id = $1`,
       [req.studentId],
@@ -60,6 +61,9 @@ router.get('/', async (req, res) => {
       success: true,
       profile: {
         fullName: student.name,
+        // Set after an instructor password reset: the app asks for a new
+        // password before anything else.
+        mustChangePassword: student.must_change_password === true,
         // null once the cooldown has elapsed (or the name was never
         // changed) -- the Edit Profile screen uses this to show/hide the
         // "you can change your name again on..." banner up front, not
@@ -360,22 +364,27 @@ router.patch('/password', async (req, res) => {
   try {
     const currentPassword = (req.body.currentPassword || '').toString();
     const newPassword = (req.body.newPassword || '').toString();
-    if (!currentPassword || !newPassword) {
+    const found = await pool.query('SELECT password_hash, must_change_password FROM students WHERE id = $1', [
+      req.studentId,
+    ]);
+    const hash = found.rows[0]?.password_hash;
+    // Right after an instructor reset, the student already signed in with
+    // the temporary password, so it isn't asked for again.
+    const forced = found.rows[0]?.must_change_password === true;
+    if (!newPassword || (!forced && !currentPassword)) {
       return res.status(400).json({ success: false, message: 'Enter your current and new password.' });
     }
     const weak = passwordProblem(newPassword);
     if (weak) {
       return res.status(400).json({ success: false, message: weak });
     }
-    const found = await pool.query('SELECT password_hash FROM students WHERE id = $1', [req.studentId]);
-    const hash = found.rows[0]?.password_hash;
-    if (!hash || !(await bcrypt.compare(currentPassword, hash))) {
+    if (!hash || (!forced && !(await bcrypt.compare(currentPassword, hash)))) {
       return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
     }
     if (await bcrypt.compare(newPassword, hash)) {
       return res.status(400).json({ success: false, message: 'Choose a password different from your current one.' });
     }
-    await pool.query('UPDATE students SET password_hash = $1, password_changed_at = now(), updated_at = now() WHERE id = $2', [
+    await pool.query('UPDATE students SET password_hash = $1, must_change_password = false, password_changed_at = now(), updated_at = now() WHERE id = $2', [
       await bcrypt.hash(newPassword, 10),
       req.studentId,
     ]);

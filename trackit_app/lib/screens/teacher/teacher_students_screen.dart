@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/teacher/password_reset_requests_card.dart';
 import '../../models/instructor_class.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/ojt_stage.dart';
@@ -62,20 +63,35 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
   }
 
   List<StudentRegistrationRequest> _requests = [];
+  List<PasswordResetRequest> _passwordResets = [];
 
   Future<void> _load() async {
     final results = await Future.wait([
       widget.classesService.getClasses(),
       widget.studentsService.getStudents(),
       widget.studentsService.getRegistrationRequests(),
+      // A failure here shouldn't hide the rest of the page.
+      widget.studentsService.getPasswordResets().catchError((_) => <PasswordResetRequest>[]),
     ]);
     if (!mounted) return;
     setState(() {
       _classes = results[0] as List<InstructorClass>;
       _students = results[1] as List<TeacherStudentSummary>;
       _requests = results[2] as List<StudentRegistrationRequest>;
+      _passwordResets = results[3] as List<PasswordResetRequest>;
       _loading = false;
     });
+  }
+
+  Future<String> _resetPassword(PasswordResetRequest r) async {
+    final temp = await widget.studentsService.resetPassword(r.id);
+    if (mounted) setState(() => _passwordResets = _passwordResets.where((x) => x.id != r.id).toList());
+    return temp;
+  }
+
+  Future<void> _dismissReset(PasswordResetRequest r) async {
+    await widget.studentsService.dismissPasswordReset(r.id);
+    if (mounted) setState(() => _passwordResets = _passwordResets.where((x) => x.id != r.id).toList());
   }
 
   // Desktop inline Approve / Remove. Removing asks for a reason, since the
@@ -324,6 +340,9 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
       classes: _classes,
       students: _sorted,
       requests: _requests,
+      passwordResets: _passwordResets,
+      onResetPassword: _resetPassword,
+      onDismissReset: _dismissReset,
       exporting: _exporting,
       onOpenStudent: widget.onOpenStudent,
       onDecide: _decide,

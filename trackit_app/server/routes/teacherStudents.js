@@ -5,6 +5,8 @@ const { computeProgressStatus, computeStage } = require('../utils/progressStatus
 const { getCreditedHoursMap } = require('../utils/creditedHours');
 const { sendNoticeEmail } = require('../utils/mailer');
 const { sendStudentRecords } = require('../utils/studentRecordsReport');
+const bcrypt = require('bcrypt');
+const { temporaryPassword } = require('../utils/tempPassword');
 
 const router = express.Router();
 router.use(requireInstructorAuth);
@@ -275,6 +277,101 @@ router.patch('/requests/:studentId', async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to save decision.' });
   } finally {
     client.release();
+  }
+});
+
+// ---------- Password reset requests (System Revision 4) ----------
+// Defined before '/:id' so these paths aren't read as a student id.
+
+// Pending requests from students in this instructor's sections.
+router.get('/password-resets', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.id, r.requested_at, s.id AS student_id, s.name, s.email, s.student_number,
+              c.id AS class_id, c.program, c.section
+       FROM password_reset_requests r
+       JOIN students s ON s.id = r.student_id
+       JOIN student_profiles sp ON sp.student_id = s.id
+       JOIN instructor_classes c ON c.id = sp.class_id
+       WHERE r.status = 'pending' AND c.instructor_id = $1
+       ORDER BY r.requested_at ASC`,
+      [req.instructorId],
+    );
+    res.json({
+      success: true,
+      requests: result.rows.map((r) => ({
+        id: Number(r.id),
+        studentId: Number(r.student_id),
+        name: r.name,
+        email: r.email,
+        studentNumber: r.student_number,
+        classId: Number(r.class_id),
+        section: `${r.program} - ${r.section}`,
+        requestedAt: r.requested_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Get password reset requests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load password reset requests.' });
+  }
+});
+
+// The request, if it belongs to one of this instructor's students.
+async function ownRequest(requestId, instructorId) {
+  const found = await pool.query(
+    `SELECT r.id, r.student_id, s.name
+     FROM password_reset_requests r
+     JOIN students s ON s.id = r.student_id
+     JOIN student_profiles sp ON sp.student_id = s.id
+     JOIN instructor_classes c ON c.id = sp.class_id
+     WHERE r.id = $1 AND r.status = 'pending' AND c.instructor_id = $2`,
+    [requestId, instructorId],
+  );
+  return found.rows[0] || null;
+}
+
+// Sets a one-time temporary password; returned once, for the instructor
+// to give to the student. The student must change it at the next sign-in.
+router.post('/password-resets/:id/reset', async (req, res) => {
+  try {
+    const request = await ownRequest(Number(req.params.id), req.instructorId);
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'This request was not found or was already handled.' });
+    }
+    const temp = temporaryPassword();
+    await pool.query(
+      `UPDATE students SET password_hash = $1, must_change_password = true,
+              password_changed_at = now(), updated_at = now()
+       WHERE id = $2`,
+      [await bcrypt.hash(temp, 10), request.student_id],
+    );
+    await pool.query(
+      `UPDATE password_reset_requests SET status = 'reset', resolved_at = now(), resolved_by = $2
+       WHERE student_id = $1 AND status = 'pending'`,
+      [request.student_id, req.instructorId],
+    );
+    res.json({ success: true, studentName: request.name, temporaryPassword: temp });
+  } catch (error) {
+    console.error('Reset student password error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reset the password.' });
+  }
+});
+
+router.post('/password-resets/:id/dismiss', async (req, res) => {
+  try {
+    const request = await ownRequest(Number(req.params.id), req.instructorId);
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'This request was not found or was already handled.' });
+    }
+    await pool.query(
+      `UPDATE password_reset_requests SET status = 'dismissed', resolved_at = now(), resolved_by = $2
+       WHERE id = $1`,
+      [request.id, req.instructorId],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Dismiss password reset error:', error);
+    res.status(500).json({ success: false, message: 'Failed to dismiss the request.' });
   }
 });
 

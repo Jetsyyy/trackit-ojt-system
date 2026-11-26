@@ -5,6 +5,7 @@ import '../../../models/student_registration_request.dart';
 import '../../../models/teacher_student_summary.dart';
 import '../../../services/api_client.dart';
 import '../../../widgets/common/desk_ui.dart';
+import '../../../widgets/teacher/password_reset_requests_card.dart';
 import '../../../widgets/student/student_ui.dart';
 
 /// Desktop Students page (instructor mockup): section tabs, Pending
@@ -15,6 +16,11 @@ class TeacherStudentsDesk extends StatefulWidget {
   final List<InstructorClass> classes;
   final List<TeacherStudentSummary> students;
   final List<StudentRegistrationRequest> requests;
+
+  /// Forgot Password requests from students in these sections.
+  final List<PasswordResetRequest> passwordResets;
+  final Future<String> Function(PasswordResetRequest request) onResetPassword;
+  final Future<void> Function(PasswordResetRequest request) onDismissReset;
   final bool exporting;
   final ValueChanged<int> onOpenStudent;
   final Future<void> Function(StudentRegistrationRequest request, bool approve) onDecide;
@@ -32,6 +38,9 @@ class TeacherStudentsDesk extends StatefulWidget {
     required this.classes,
     required this.students,
     required this.requests,
+    this.passwordResets = const [],
+    required this.onResetPassword,
+    required this.onDismissReset,
     required this.exporting,
     required this.onOpenStudent,
     required this.onDecide,
@@ -66,6 +75,12 @@ class _TeacherStudentsDeskState extends State<TeacherStudentsDesk> {
       }
       return widget.matchesFilters(s);
     }).toList();
+  }
+
+  List<PasswordResetRequest> get _sectionResets {
+    final c = _class;
+    if (c == null) return widget.passwordResets;
+    return widget.passwordResets.where((r) => r.classId == c.id).toList();
   }
 
   List<StudentRegistrationRequest> get _sectionRequests {
@@ -143,6 +158,15 @@ class _TeacherStudentsDeskState extends State<TeacherStudentsDesk> {
                     ),
                     const SizedBox(height: 12),
                     _PendingApprovals(requests: _sectionRequests, onDecide: widget.onDecide, compact: true),
+                    if (_sectionResets.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      PasswordResetRequestsCard(
+                        requests: _sectionResets,
+                        onReset: widget.onResetPassword,
+                        onDismiss: widget.onDismissReset,
+                        compact: true,
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -286,6 +310,14 @@ class _TeacherStudentsDeskState extends State<TeacherStudentsDesk> {
               ],
             ),
           ),
+          if (_sectionResets.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            PasswordResetRequestsCard(
+              requests: _sectionResets,
+              onReset: widget.onResetPassword,
+              onDismiss: widget.onDismissReset,
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [

@@ -222,6 +222,56 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// Forgot Password (System Revision 4): the student asks their instructor
+// for a reset. The reply is the same whether or not the email has an
+// account, so emails can't be probed.
+router.post('/forgot-password', async (req, res) => {
+  const reply = {
+    success: true,
+    message:
+      'If that email belongs to a TrackIT student account, your instructor has been asked to reset your password. They will give you a temporary password.',
+  };
+  try {
+    const email = (req.body.email || '').toString().toLowerCase().trim();
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Enter the email you registered with.' });
+    }
+    const found = await pool.query(
+      `SELECT s.id, s.name, c.instructor_id
+       FROM students s
+       JOIN student_profiles sp ON sp.student_id = s.id
+       JOIN instructor_classes c ON c.id = sp.class_id
+       WHERE LOWER(s.email) = $1 AND s.approval_status = 'approved' AND c.instructor_id IS NOT NULL`,
+      [email],
+    );
+    const student = found.rows[0];
+    if (!student) return res.json(reply);
+    // One open request per student; asking again just keeps it.
+    const open = await pool.query(
+      `SELECT id FROM password_reset_requests WHERE student_id = $1 AND status = 'pending'`,
+      [student.id],
+    );
+    if (open.rows.length === 0) {
+      await pool.query('INSERT INTO password_reset_requests (student_id) VALUES ($1)', [student.id]);
+      await pool.query(
+        `INSERT INTO instructor_notifications
+           (instructor_id, category, title, message, related_module, related_student_id)
+         VALUES ($1, 'student', $2, $3, 'students', $4)`,
+        [
+          student.instructor_id,
+          'Password Reset Request',
+          `${student.name} forgot their password. Reset it in Students > Password Reset Requests and give them the temporary password.`,
+          student.id,
+        ],
+      );
+    }
+    res.json(reply);
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ success: false, message: 'Could not send the request. Try again.' });
+  }
+});
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
