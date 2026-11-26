@@ -1,19 +1,49 @@
 // Where uploaded files live.
 //
 // Online (Vercel) the server's disk is wiped between requests, so files go
-// to Vercel Blob; that's switched on by the BLOB_READ_WRITE_TOKEN variable
-// Vercel adds when a Blob store is connected to the project. On a computer
-// without that variable, files are saved under server/uploads as before
-// and served from /uploads.
+// to Supabase Storage when SUPABASE_URL and SUPABASE_SERVICE_KEY are set
+// (bucket SUPABASE_BUCKET, default "trackit-files", which must be Public).
+// Vercel Blob is still supported as a fallback. On a computer with neither,
+// files are saved under server/uploads and served from /uploads.
 //
 // uploadStorage(folder) is a multer storage engine. After an upload,
-// req.file.url is the address to save in the database: an https:// Blob
+// req.file.url is the address to save in the database: an https:// public
 // URL online, or "/uploads/<folder>/<name>" locally.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
+
+// ---- Supabase Storage (REST API, no extra package needed) ----
+
+function supabase() {
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SERVICE_KEY || '').trim();
+  if (!url || !key) return null;
+  const bucket = (process.env.SUPABASE_BUCKET || 'trackit-files').trim();
+  return { url, key, bucket, publicPrefix: `${url}/storage/v1/object/public/${bucket}/` };
+}
+
+const supabaseHeaders = (cfg, extra = {}) => ({ apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, ...extra });
+const encodePath = (objectPath) => objectPath.split('/').map(encodeURIComponent).join('/');
+
+/// Uploads a buffer to Supabase and returns its public URL.
+async function putSupabase(objectPath, buffer, contentType) {
+  const cfg = supabase();
+  const res = await fetch(`${cfg.url}/storage/v1/object/${cfg.bucket}/${encodePath(objectPath)}`, {
+    method: 'POST',
+    headers: supabaseHeaders(cfg, { 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'false' }),
+    body: buffer,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`File storage upload failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return cfg.publicPrefix + encodePath(objectPath);
+}
+
+// ---- Vercel Blob (fallback) ----
 
 // The Blob store's key. Vercel names it BLOB_READ_WRITE_TOKEN unless a
 // custom prefix was chosen when connecting the store (e.g.
@@ -53,6 +83,15 @@ class UploadStorage {
 
   _handleFile(req, file, cb) {
     const name = uniqueName(file.originalname);
+    if (supabase()) {
+      readStream(file.stream)
+        .then(async (buffer) => {
+          const url = await putSupabase(`${this.folder}/${name}`, buffer, file.mimetype);
+          cb(null, { filename: name, size: buffer.length, url, path: null });
+        })
+        .catch(cb);
+      return;
+    }
     if (useBlob()) {
       readStream(file.stream)
         .then(async (buffer) => {
@@ -69,13 +108,13 @@ class UploadStorage {
       return;
     }
     if (process.env.VERCEL) {
-      // Vercel's disk is read-only: without a connected Blob store there is
-      // nowhere to keep the file.
+      // Vercel's disk is read-only: without online storage there is nowhere
+      // to keep the file.
       // Names only (never values), to show which storage settings exist.
-      const related = Object.keys(process.env).filter((n) => /BLOB|STORE|READ_WRITE/i.test(n));
+      const related = Object.keys(process.env).filter((n) => /BLOB|STORE|READ_WRITE|SUPABASE/i.test(n));
       cb(
         new Error(
-          'File storage is not set up: connect a Vercel Blob store to the project and redeploy.' +
+          'File storage is not set up: add SUPABASE_URL and SUPABASE_SERVICE_KEY to the project and redeploy.' +
             ` (storage settings found: ${related.length ? related.join(', ') : 'none'})`,
         ),
       );
@@ -113,11 +152,23 @@ class UploadStorage {
 
 const uploadStorage = (folder) => new UploadStorage(folder);
 
-/// Deletes a stored file by the URL saved in the database (a Blob URL or
-/// a local /uploads path). Missing files are ignored.
+/// Deletes a stored file by the URL saved in the database (a Supabase or
+/// Blob URL, or a local /uploads path). Missing files are ignored.
 async function removeStored(url) {
   if (!url) return;
   try {
+    const cfg = supabase();
+    if (cfg && url.startsWith(cfg.publicPrefix)) {
+      const objectPath = url.slice(cfg.publicPrefix.length);
+      const res = await fetch(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
+        method: 'DELETE',
+        headers: supabaseHeaders(cfg),
+      });
+      if (!res.ok && res.status !== 404 && res.status !== 400) {
+        console.error('Remove stored file error:', url, res.status);
+      }
+      return;
+    }
     if (/^https?:\/\//.test(url)) {
       if (!useBlob()) return;
       const { del } = require('@vercel/blob');
@@ -134,4 +185,4 @@ async function removeStored(url) {
   }
 }
 
-module.exports = { uploadStorage, removeStored, UPLOAD_ROOT };
+module.exports = { uploadStorage, removeStored, putSupabase, supabase, UPLOAD_ROOT };
