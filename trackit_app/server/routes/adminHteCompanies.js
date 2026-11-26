@@ -3,7 +3,7 @@ const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const { getCurrentAcademicYear } = require('../utils/classHelpers');
 const { regionOf, matchesLocation, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
-const { sendHteReport } = require('../utils/hteReport');
+const { sendHteReport, groupByLocation } = require('../utils/hteReport');
 
 const router = express.Router();
 router.use(requireAdminAuth);
@@ -97,15 +97,17 @@ router.get('/report', async (req, res) => {
     const location = (req.query.location || '').toString().trim();
     const locations = location.split(',').map((s) => s.trim()).filter(Boolean);
     const withStudents = req.query.type !== 'info';
-    let companies = await loadDirectoryWithPlacements({ academicYear, location: locations.join(',') });
-    // Several locations: keep each location's companies together.
-    if (locations.length > 1) {
-      const groupOf = (c) => locations.findIndex((l) => matchesLocation(c, l));
-      companies = [...companies].sort((a, b) => groupOf(a) - groupOf(b) || a.name.localeCompare(b.name));
-    }
+    const companies = await loadDirectoryWithPlacements({ academicYear, location: locations.join(',') });
+    // A separate table per location: per selected location (named as the
+    // Admin picked it), or per region when no location is selected.
+    const groups =
+      locations.length > 0
+        ? groupByLocation(companies, (c) => locations.find((l) => matchesLocation(c, l)) || null)
+        : groupByLocation(companies);
     await sendHteReport(res, {
       format,
       companies,
+      groups,
       withStudents,
       title: 'HTE Directory Report',
       subtitle: [
