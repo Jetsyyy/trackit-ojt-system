@@ -38,6 +38,10 @@ abstract class StudentProfileService {
     String? department,
   });
 
+  /// Changes the student's password (current password required; the new
+  /// one must meet the password rules).
+  Future<void> changePassword({required String currentPassword, required String newPassword});
+
   /// Matching companies already saved in the system, for suggestions
   /// while typing the company name (System Revisions item 8).
   Future<List<CompanySuggestion>> suggestCompanies(String query);
@@ -124,6 +128,9 @@ class MockStudentProfileService implements StudentProfileService {
   }) async => _profile;
 
   @override
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {}
+
+  @override
   Future<List<CompanySuggestion>> suggestCompanies(String query) async => const [];
 }
 
@@ -199,6 +206,14 @@ class HttpStudentProfileService implements StudentProfileService {
       },
     );
     return getProfile();
+  }
+
+  @override
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
+    await client.patch(
+      '/api/profile/password',
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
   }
 
   @override

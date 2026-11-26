@@ -1,4 +1,6 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
+const { passwordProblem } = require('../utils/passwordPolicy');
 const multer = require('multer');
 const { uploadStorage } = require('../utils/storage');
 const path = require('path');
@@ -351,6 +353,36 @@ router.patch('/company/supervisor', async (req, res) => {
   } catch (error) {
     console.error('Update supervisor error:', error);
     res.status(500).json({ success: false, message: 'Failed to update supervisor.' });
+  }
+});
+
+router.patch('/password', async (req, res) => {
+  try {
+    const currentPassword = (req.body.currentPassword || '').toString();
+    const newPassword = (req.body.newPassword || '').toString();
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Enter your current and new password.' });
+    }
+    const weak = passwordProblem(newPassword);
+    if (weak) {
+      return res.status(400).json({ success: false, message: weak });
+    }
+    const found = await pool.query('SELECT password_hash FROM students WHERE id = $1', [req.studentId]);
+    const hash = found.rows[0]?.password_hash;
+    if (!hash || !(await bcrypt.compare(currentPassword, hash))) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+    }
+    if (await bcrypt.compare(newPassword, hash)) {
+      return res.status(400).json({ success: false, message: 'Choose a password different from your current one.' });
+    }
+    await pool.query('UPDATE students SET password_hash = $1, password_changed_at = now(), updated_at = now() WHERE id = $2', [
+      await bcrypt.hash(newPassword, 10),
+      req.studentId,
+    ]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Change student password error:', error);
+    res.status(500).json({ success: false, message: 'Failed to change password.' });
   }
 });
 

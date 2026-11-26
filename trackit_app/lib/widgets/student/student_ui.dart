@@ -86,12 +86,17 @@ class StudentHeader extends StatelessWidget {
   final bool showBack;
   final VoidCallback? onBack;
 
+  /// A shorter header (smaller title, less padding) for pages whose own
+  /// content starts right below it, like Profile.
+  final bool compact;
+
   const StudentHeader({
     super.key,
     required this.title,
     required this.subtitle,
     this.showBack = false,
     this.onBack,
+    this.compact = false,
   });
 
   @override
@@ -133,7 +138,7 @@ class StudentHeader extends StatelessWidget {
             SafeArea(
               bottom: false,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(22, showBack ? 10 : 18, 14, 18),
+                padding: EdgeInsets.fromLTRB(22, showBack ? 10 : (compact ? 10 : 18), 14, compact ? 12 : 18),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -161,7 +166,7 @@ class StudentHeader extends StatelessWidget {
                               ),
                             ),
                           ] else
-                            Text(title, style: studentSerif(size: 36, color: Colors.white)),
+                            Text(title, style: studentSerif(size: compact ? 26 : 36, color: Colors.white)),
                           const SizedBox(height: 4),
                           Text(
                             subtitle,

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../utils/password_rules.dart';
+import '../../widgets/common/password_guide.dart';
 import '../../widgets/common/desk_ui.dart';
 import 'desk/admin_profile_desk.dart';
 import 'package:intl/intl.dart';
@@ -1009,12 +1011,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                         controller: _newPasswordController,
                         obscureText: true,
                         decoration: const InputDecoration(labelText: 'New Password'),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Required';
-                          if (v.length < 8) return 'At least 8 characters';
-                          return null;
-                        },
+                        validator: newPasswordError,
                       ),
+                      PasswordGuide(controller: _newPasswordController),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _confirmPasswordController,

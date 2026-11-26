@@ -80,6 +80,11 @@ class InstructorAuthService {
     return _persistAuthResponse(response);
   }
 
+  /// Keeps the session from a sign-in response (also used by the Staff
+  /// portal's single sign-in, see StaffAuthService).
+  Future<InstructorAuthResult> completeLogin(Map<String, dynamic> response) =>
+      _persistAuthResponse(response);
+
   Future<InstructorAuthResult> _persistAuthResponse(Map<String, dynamic> response) async {
     final token = response['token'] as String;
     final instructor = response['instructor'] as Map<String, dynamic>;

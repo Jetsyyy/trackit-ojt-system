@@ -4,6 +4,7 @@ import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
+import '../../services/staff_auth_service.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_portal.dart';
 import '../../widgets/auth/portal_layout.dart';
@@ -33,6 +34,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _roleStore = SessionRoleStore();
+  late final _staffAuth = StaffAuthService(
+    client: widget.adminAuthService.client,
+    adminAuth: widget.adminAuthService,
+    instructorAuth: widget.instructorAuthService,
+  );
   bool _submitting = false;
   bool _rememberMe = false;
   String? _errorMessage;
@@ -77,6 +83,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
     try {
+      // Staff portal: one form; the server says whether this is an Admin
+      // or an Instructor account (System Revision 7).
+      if (currentPortal == AppPortal.staff) {
+        final role = await _staffAuth.login(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+        await _roleStore.setRemember(_rememberMe);
+        if (!mounted) return;
+        widget.onLoggedIn(role);
+        return;
+      }
       switch (_role) {
         case SessionRole.student:
           await widget.authService.login(

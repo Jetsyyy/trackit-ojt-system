@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../services/api_client.dart';
+import '../../../utils/password_rules.dart';
+import '../../../widgets/common/password_guide.dart';
 import '../../../utils/app_colors.dart';
 import '../../../widgets/common/back_nav_header.dart';
 import '../../../widgets/common/settings_section_header.dart';
@@ -12,10 +15,14 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback? onOpenEditProfile;
   final VoidCallback? onOpenLoginHistory;
 
+  /// Student side only: saves a new password. Null keeps the stub.
+  final Future<void> Function({required String currentPassword, required String newPassword})? changePassword;
+
   const SettingsScreen({
     super.key,
     this.onOpenEditProfile,
     this.onOpenLoginHistory,
+    this.changePassword,
   });
 
   @override
@@ -35,6 +42,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$feature is coming soon.')),
     );
+  }
+
+  Future<void> _openChangePassword() async {
+    final save = widget.changePassword;
+    if (save == null) return _stub('Change Password');
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _ChangePasswordDialog(save: save),
+    );
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password changed.')));
+    }
   }
 
   void _confirmDeleteAccount() {
@@ -98,7 +117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       SettingsTile(
                         icon: Icons.lock_outline,
                         title: 'Change Password',
-                        onTap: () => _stub('Change Password'),
+                        onTap: _openChangePassword,
                       ),
                       SettingsTile(
                         icon: Icons.alternate_email,
@@ -287,6 +306,109 @@ class _Group extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Current password, new password (with the live password guide) and
+/// confirmation.
+class _ChangePasswordDialog extends StatefulWidget {
+  final Future<void> Function({required String currentPassword, required String newPassword}) save;
+
+  const _ChangePasswordDialog({required this.save});
+
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _current = TextEditingController();
+  final _new = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _new.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.save(currentPassword: _current.text, newPassword: _new.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = e is ApiException ? e.message : 'Could not change the password.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change Password'),
+      content: SizedBox(
+        width: 360,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null) ...[
+                  Text(_error!, style: const TextStyle(color: AppColors.statRedIcon)),
+                  const SizedBox(height: 8),
+                ],
+                TextFormField(
+                  controller: _current,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Current Password'),
+                  validator: (v) => (v == null || v.isEmpty) ? 'Enter your current password' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _new,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'New Password'),
+                  validator: newPasswordError,
+                ),
+                PasswordGuide(controller: _new),
+                const SizedBox(height: 4),
+                TextFormField(
+                  controller: _confirm,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Confirm New Password'),
+                  validator: (v) => v != _new.text ? 'Passwords do not match' : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          style: FilledButton.styleFrom(backgroundColor: AppColors.primaryMaroon),
+          child: _saving
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Save'),
+        ),
+      ],
     );
   }
 }

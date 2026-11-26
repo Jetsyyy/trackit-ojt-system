@@ -1,4 +1,5 @@
 const express = require('express');
+const { passwordProblem } = require('../utils/passwordPolicy');
 const bcrypt = require('bcrypt');
 const pool = require('../db');
 const { generateToken, requireAuth } = require('../middleware/auth');
@@ -22,10 +23,9 @@ router.post('/register', async (req, res) => {
         message: 'name, email, password, and activationCode are required.',
       });
     }
-    if (password.length < 8) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Password must be at least 8 characters.' });
+    const weak = passwordProblem(password);
+    if (weak) {
+      return res.status(400).json({ success: false, message: weak });
     }
 
     const normalizedEmail = email.toLowerCase().trim();

@@ -1,4 +1,5 @@
 const express = require('express');
+const { passwordProblem } = require('../utils/passwordPolicy');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -271,10 +272,9 @@ router.post('/change-password/confirm', async (req, res) => {
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ success: false, message: 'Passwords do not match.' });
     }
-    if (newPassword.length < 8) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'New password must be at least 8 characters.' });
+    const weak = passwordProblem(newPassword);
+    if (weak) {
+      return res.status(400).json({ success: false, message: weak });
     }
 
     let payload;

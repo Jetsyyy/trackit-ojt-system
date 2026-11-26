@@ -6,9 +6,10 @@ import '../student/student_ui.dart';
 class AppHeader extends StatelessWidget {
   final String title;
   final String subtitle;
+  final bool compact;
 
-  const AppHeader({super.key, required this.title, required this.subtitle});
+  const AppHeader({super.key, required this.title, required this.subtitle, this.compact = false});
 
   @override
-  Widget build(BuildContext context) => StudentHeader(title: title, subtitle: subtitle);
+  Widget build(BuildContext context) => StudentHeader(title: title, subtitle: subtitle, compact: compact);
 }

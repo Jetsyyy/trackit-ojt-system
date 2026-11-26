@@ -120,7 +120,6 @@ class _DesktopLayout extends StatelessWidget {
                         ),
                         _PortalSwitcher(
                           portal: portal,
-                          onChanged: onPortalChanged,
                           pill: false,
                         ),
                       ],
@@ -221,7 +220,7 @@ class _MobileLayout extends StatelessWidget {
                           const SizedBox(height: 18),
                           const _Brand(logoWidth: 170),
                           const SizedBox(height: 14),
-                          _PortalSwitcher(portal: portal, onChanged: onPortalChanged, pill: true),
+                          _PortalSwitcher(portal: portal, pill: true),
                         ],
                       ),
                     ),
@@ -364,15 +363,14 @@ class _PortalSwitcher extends StatelessWidget {
   final SessionRole portal;
   final bool pill;
 
-  const _PortalSwitcher({required this.portal, required ValueChanged<SessionRole>? onChanged, required this.pill})
-      : _onChanged = onChanged;
+  const _PortalSwitcher({required this.portal, required this.pill});
 
-  final ValueChanged<SessionRole>? _onChanged;
+  // No role menu on either portal (System Revision 7): the Staff portal
+  // signs in Admins and Instructors with one form and the server decides
+  // the role. Kept for the register screens' API shape.
+  ValueChanged<SessionRole>? get onChanged => null;
 
-  // Only this portal's roles are offered; the Student portal has just one,
-  // so its label is plain text, not a menu.
-  ValueChanged<SessionRole>? get onChanged =>
-      rolesFor(currentPortal).length > 1 ? _onChanged : null;
+  String get _label => currentPortal == AppPortal.staff ? 'STAFF PORTAL' : portalLabel(portal);
 
   @override
   Widget build(BuildContext context) {
@@ -390,7 +388,7 @@ class _PortalSwitcher extends StatelessWidget {
                 Icon(_portalIcon(portal), size: 15, color: AppColors.accentOrange),
                 const SizedBox(width: 6),
                 Text(
-                  portalLabel(portal),
+                  _label,
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
                 ),
                 if (onChanged != null) ...[
@@ -404,7 +402,7 @@ class _PortalSwitcher extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                portalLabel(portal),
+                _label,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 17,

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../utils/password_rules.dart';
+import '../../widgets/common/password_guide.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../models/teacher_profile.dart';
 import '../../services/api_client.dart';
@@ -206,12 +208,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                       controller: newController,
                       obscureText: true,
                       decoration: const InputDecoration(labelText: 'New Password'),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Required';
-                        if (v.length < 8) return 'At least 8 characters';
-                        return null;
-                      },
+                      validator: newPasswordError,
                     ),
+                    PasswordGuide(controller: newController),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: confirmController,
@@ -411,9 +410,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard'),
-                    Transform.translate(
-                      offset: const Offset(0, -30),
+                    const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard', compact: true),
+                    Padding(
+                    padding: const EdgeInsets.only(top: 14),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: _ProfileCard(
@@ -424,7 +423,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                       child: _DetailsCard(
                         title: 'Personal Details',
                         rows: [
@@ -545,7 +544,7 @@ class _ProfileSkeleton extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard'),
+        const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard', compact: true),
         const Padding(
           padding: EdgeInsets.all(16),
           child: SkeletonList(count: 3),

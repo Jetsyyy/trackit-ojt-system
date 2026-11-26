@@ -29,6 +29,12 @@ class AdminAuthService {
       '/api/admin-auth/login',
       body: {'email': email, 'password': password},
     );
+    return completeLogin(response);
+  }
+
+  /// Keeps the session from a sign-in response (also used by the Staff
+  /// portal's single sign-in, see StaffAuthService).
+  Future<AdminAuthResult> completeLogin(Map<String, dynamic> response) async {
     final token = response['token'] as String;
     final admin = AdminProfile.fromJson(response['admin'] as Map<String, dynamic>);
     await _storage.write(key: _tokenKey, value: token);

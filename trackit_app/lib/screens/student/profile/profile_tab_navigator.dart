@@ -55,6 +55,7 @@ class _ProfileTabNavigatorState extends State<ProfileTabNavigator> {
                 onOpenEditProfile: () => _navigatorKey.currentState?.pushNamed('/edit-profile'),
                 onOpenLoginHistory: () =>
                     _navigatorKey.currentState?.pushNamed('/login-history'),
+                changePassword: _profileService.changePassword,
               );
               break;
             case '/edit-profile':

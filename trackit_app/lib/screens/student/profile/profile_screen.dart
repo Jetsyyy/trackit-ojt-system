@@ -296,9 +296,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard'),
-                  Transform.translate(
-                    offset: const Offset(0, -30),
+                  const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard', compact: true),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _ProfileCard(
@@ -328,7 +328,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
@@ -400,9 +400,9 @@ class _ProfileSkeleton extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard'),
-        Transform.translate(
-          offset: const Offset(0, -30),
+        const AppHeader(title: 'Profile', subtitle: 'Personal Dashboard', compact: true),
+        Padding(
+                    padding: const EdgeInsets.only(top: 14),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(

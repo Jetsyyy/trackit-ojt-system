@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../utils/password_rules.dart';
+import '../../widgets/common/password_guide.dart';
 import '../../services/api_client.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
@@ -190,12 +192,11 @@ class _InstructorRegisterScreenState extends State<InstructorRegisterScreen> {
               icon: Icons.lock_outline,
               controller: _passwordController,
               isPassword: true,
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 8) return 'Must be at least 8 characters';
-                return null;
-              },
+              validator: newPasswordError,
             ),
+            // Password guide: each rule ticks green while typing.
+            PasswordGuide(controller: _passwordController),
+            const SizedBox(height: 12),
             PortalField(
               key: const ValueKey('confirm'),
               label: 'Re-enter Password',

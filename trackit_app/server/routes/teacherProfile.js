@@ -1,4 +1,5 @@
 const express = require('express');
+const { passwordProblem } = require('../utils/passwordPolicy');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const { uploadStorage } = require('../utils/storage');
@@ -96,10 +97,9 @@ router.patch('/password', async (req, res) => {
         message: 'currentPassword and newPassword are required.',
       });
     }
-    if (newPassword.length < 8) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'New password must be at least 8 characters.' });
+    const weak = passwordProblem(newPassword);
+    if (weak) {
+      return res.status(400).json({ success: false, message: weak });
     }
 
     const result = await pool.query('SELECT password_hash FROM advisers WHERE id = $1', [
