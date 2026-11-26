@@ -144,9 +144,25 @@ router.patch('/:id', async (req, res) => {
       values.push(cleanText(req.body.description) || '');
       fields.push(`description = $${values.length}`);
     }
+    let dropTemplateUrl = null;
     if (req.body.issuedBy !== undefined) {
-      values.push(cleanText(req.body.issuedBy));
+      const issuedBy = cleanText(req.body.issuedBy);
+      values.push(issuedBy);
       fields.push(`issued_by = $${values.length}`);
+      // An office-issued document (e.g. Medical Certificate from the Clinic)
+      // has no TrackIT template: students submit the actual issued
+      // document, so any stored template is removed.
+      if (issuedBy) {
+        const current = await pool.query('SELECT template_url FROM ojt_requirement_templates WHERE id = $1', [id]);
+        dropTemplateUrl = current.rows[0]?.template_url || null;
+        fields.push(
+          'template_url = NULL',
+          'template_name = NULL',
+          'has_template = false',
+          'template_size = NULL',
+          'template_uploaded_at = NULL',
+        );
+      }
     }
     if (req.body.copiesRequired !== undefined) {
       const copies = copiesFrom(req.body.copiesRequired);
@@ -185,6 +201,7 @@ router.patch('/:id', async (req, res) => {
     if (updated.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Requirement not found.' });
     }
+    if (dropTemplateUrl) removeTemplateFile(dropTemplateUrl);
     res.json({ success: true, requirement: toRequirementJson(updated.rows[0]) });
   } catch (error) {
     console.error('Update requirement error:', error);
@@ -268,8 +285,28 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Office-issued documents never take a TrackIT template; refuse before the
+// file is stored anywhere.
+async function rejectIfIssued(req, res, next) {
+  try {
+    const found = await pool.query('SELECT issued_by FROM ojt_requirement_templates WHERE id = $1', [
+      Number(req.params.id),
+    ]);
+    const office = found.rows[0]?.issued_by;
+    if (office) {
+      return res.status(400).json({
+        success: false,
+        message: `This document is issued by the ${office}, so it has no TrackIT template. Students submit the actual issued document.`,
+      });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Upload or replace the downloadable template (pdf/doc/docx/xls/xlsx).
-router.post('/:id/template', uploadTemplate.single('template'), async (req, res) => {
+router.post('/:id/template', rejectIfIssued, uploadTemplate.single('template'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -279,12 +316,19 @@ router.post('/:id/template', uploadTemplate.single('template'), async (req, res)
     }
     const id = Number(req.params.id);
     const previous = await pool.query(
-      'SELECT template_url FROM ojt_requirement_templates WHERE id = $1',
+      'SELECT template_url, issued_by FROM ojt_requirement_templates WHERE id = $1',
       [id],
     );
     if (previous.rows.length === 0) {
       removeStored(req.file.url);
       return res.status(404).json({ success: false, message: 'Requirement not found.' });
+    }
+    if (previous.rows[0].issued_by) {
+      removeStored(req.file.url);
+      return res.status(400).json({
+        success: false,
+        message: `This document is issued by the ${previous.rows[0].issued_by}, so it has no TrackIT template. Students submit the actual issued document.`,
+      });
     }
     const updated = await pool.query(
       `UPDATE ojt_requirement_templates

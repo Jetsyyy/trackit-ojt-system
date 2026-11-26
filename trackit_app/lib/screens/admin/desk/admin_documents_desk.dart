@@ -484,12 +484,37 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                 offset: const Offset(0, -10),
                 child: Text(
                   office
-                      ? 'Students get this document from the ${r.issuedBy}, so it has no download.'
+                      ? 'Issued by the ${r.issuedBy}: there is no TrackIT template to download or replace.'
                       : 'Only students can download this file from their side.',
                   style: const TextStyle(fontSize: 11, color: DeskColors.muted),
                 ),
               ),
-              if (r.templateName != null) ...[
+              // Office-issued documents (Medical Certificate from the Clinic,
+              // Registration Form from the Library) never have a TrackIT
+              // template: students submit the actual issued document.
+              if (office)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBF4F4),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFEBD3D6)),
+                  ),
+                  child: Row(
+                    children: [
+                      const DeskIconBox(icon: Icons.local_hospital_outlined, size: 36),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Students get the ${r.name} from the ${r.issuedBy} and upload the actual issued document. '
+                          'To use a TrackIT template instead, edit this document and clear "Issued by".',
+                          style: const TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF333333)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!office && r.templateName != null) ...[
                 Container(
                   padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
                   decoration: BoxDecoration(
@@ -548,6 +573,7 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                 ),
                 const SizedBox(height: 12),
               ],
+              if (!office)
               InkWell(
                 onTap: _busy ? null : () => _replace(r),
                 borderRadius: BorderRadius.circular(10),
