@@ -439,3 +439,29 @@ After setup, every push to `main` redeploys automatically.
   level of protection as the old `/uploads` folder.
 - `FLUTTER_VERSION` in `vercel/install.sh` should match your local
   `flutter --version` when you upgrade Flutter.
+
+## 9. Android Apps
+
+There are two Android apps. Both use the live site's server and accounts:
+
+| App | For | Opens |
+|---|---|---|
+| **TrackIT** | Students | Student sign-in |
+| **TrackIT Staff** | Instructors and the Admin | Staff sign-in (the server decides Admin or Instructor) |
+
+They have different app IDs (`com.example.trackit_app` and
+`com.example.trackit_app.staff`), so one phone can have both installed.
+
+Build them from `trackit_app` (each takes a few minutes):
+
+```
+flutter build apk --release --dart-define=API_BASE_URL=https://trackit-ojt-system.vercel.app
+flutter build apk --release --dart-define=API_BASE_URL=https://trackit-ojt-system.vercel.app --dart-define=TRACKIT_PORTAL=staff
+```
+
+Each build writes `build/app/outputs/flutter-apk/app-release.apk`, so copy
+it somewhere (e.g. `TrackIT.apk` / `TrackIT-Staff.apk`) before building the
+other one. `TRACKIT_PORTAL=staff` is what turns a build into TrackIT Staff
+(see `android/app/build.gradle.kts` and `lib/utils/app_portal.dart`).
+Screen changes reach phones only when a new APK is installed; server and
+data changes reach them right away.
