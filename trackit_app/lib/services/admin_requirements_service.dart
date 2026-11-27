@@ -68,6 +68,7 @@ class AdminRequirementPhase {
   final int id;
   final int order;
   final String title;
+  final String description;
   final List<AdminRequirement> requirements;
 
   /// 'final_details' for Stage 4: the student's final company and
@@ -78,6 +79,7 @@ class AdminRequirementPhase {
     required this.id,
     required this.order,
     required this.title,
+    this.description = '',
     required this.requirements,
     this.kind = 'documents',
   });
@@ -89,6 +91,7 @@ class AdminRequirementPhase {
       id: json['id'] as int,
       order: json['order'] as int,
       title: json['title'] as String,
+      description: json['description'] as String? ?? '',
       requirements: (json['requirements'] as List<dynamic>)
           .map((r) => AdminRequirement.fromJson(r as Map<String, dynamic>))
           .toList(),
@@ -104,8 +107,20 @@ class AdminRequirementsService {
 
   AdminRequirementsService(this.client);
 
+  /// Stage 4 (Final Details): approved students in the active academic
+  /// year who submitted their final details, from the last [getPhases].
+  ({String? academicYear, int submitted, int total})? finalDetails;
+
   Future<List<AdminRequirementPhase>> getPhases() async {
     final response = await client.get('/api/admin/requirements');
+    final fd = response['finalDetails'] as Map<String, dynamic>?;
+    finalDetails = fd == null
+        ? null
+        : (
+            academicYear: fd['academicYear'] as String?,
+            submitted: (fd['submitted'] as num?)?.toInt() ?? 0,
+            total: (fd['total'] as num?)?.toInt() ?? 0,
+          );
     return (response['phases'] as List<dynamic>)
         .map((p) => AdminRequirementPhase.fromJson(p as Map<String, dynamic>))
         .toList();
@@ -154,6 +169,11 @@ class AdminRequirementsService {
         if (phaseId != null) 'phaseId': phaseId,
       },
     );
+  }
+
+  /// A stage's description (what students read under its title).
+  Future<void> updatePhaseDescription(int phaseId, String description) async {
+    await client.patch('/api/admin/requirements/phases/$phaseId', body: {'description': description});
   }
 
   Future<void> move(int id, {required bool up}) async {

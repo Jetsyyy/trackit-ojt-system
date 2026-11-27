@@ -6,6 +6,7 @@ const path = require('path');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const { requirementFileFilter } = require('../utils/requirementFileTypes');
+const { getCurrentAcademicYear } = require('../utils/classHelpers');
 
 // Official Requirements catalog, managed by the Admin only (System
 // Revisions item 15): the requirement list and order (so the corrected
@@ -60,8 +61,25 @@ function removeTemplateFile(url) {
   removeStored(url);
 }
 
+// Stage 4 (Final Details): how many approved students in the active
+// academic year have submitted their final company and supervisor details.
+async function finalDetailsProgress() {
+  const year = await getCurrentAcademicYear();
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE sp.company_confirmed_at IS NOT NULL)::int AS submitted
+     FROM students s
+     JOIN student_profiles sp ON sp.student_id = s.id
+     JOIN instructor_classes ic ON ic.id = sp.class_id
+     WHERE s.approval_status = 'approved' AND ic.academic_year = $1`,
+    [year],
+  );
+  return { academicYear: year, submitted: r.rows[0].submitted, total: r.rows[0].total };
+}
+
 router.get('/', async (req, res) => {
   try {
+    const finalDetails = await finalDetailsProgress().catch(() => null);
     const [phases, templates] = await Promise.all([
       pool.query('SELECT * FROM ojt_requirement_phases ORDER BY order_index ASC'),
       pool.query(
@@ -76,6 +94,7 @@ router.get('/', async (req, res) => {
     ]);
     res.json({
       success: true,
+      finalDetails,
       phases: phases.rows.map((p) => ({
         id: Number(p.id),
         order: p.order_index,
@@ -91,6 +110,30 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Get admin requirements error:', error);
     res.status(500).json({ success: false, message: 'Failed to load requirements.' });
+  }
+});
+
+// A stage's description (what students read under its title).
+router.patch('/phases/:id', async (req, res) => {
+  try {
+    const description = cleanText(req.body.description);
+    if (!description) {
+      return res.status(400).json({ success: false, message: 'Enter a description.' });
+    }
+    if (description.length > 300) {
+      return res.status(400).json({ success: false, message: 'Keep the description under 300 characters.' });
+    }
+    const updated = await pool.query(
+      'UPDATE ojt_requirement_phases SET description = $1 WHERE id = $2 RETURNING id',
+      [description, Number(req.params.id)],
+    );
+    if (updated.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Stage not found.' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update stage description error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save the description.' });
   }
 });
 

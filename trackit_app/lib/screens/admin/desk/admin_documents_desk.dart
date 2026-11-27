@@ -26,6 +26,8 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   List<AdminRequirementPhase> _phases = [];
   bool _loading = true;
   int? _selectedId;
+  // Stage 4 (Final Details) panel, selected from the list instead of a document.
+  int? _stageId;
   bool _busy = false;
 
   @override
@@ -50,7 +52,8 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
         _phases = phases;
         _loading = false;
         final all = [for (final p in phases) ...p.requirements];
-        if (_selectedId == null || !all.any((r) => r.id == _selectedId)) {
+        if (_stageId != null && !phases.any((p) => p.id == _stageId)) _stageId = null;
+        if (_stageId == null && (_selectedId == null || !all.any((r) => r.id == _selectedId))) {
           _selectedId = all.isEmpty ? null : all.first.id;
         }
       });
@@ -257,14 +260,7 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                       ),
                     ),
                     if (p.isFinalDetails)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 8, left: 4),
-                        child: Text(
-                          'No documents. Students fill in their final company, address and supervisor '
-                          'information here (OJT Final Information form).',
-                          style: TextStyle(fontSize: 11, color: DeskColors.muted),
-                        ),
-                      )
+                      _stageItem(p)
                     else if (p.requirements.isEmpty)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 8, left: 4),
@@ -312,7 +308,10 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _selectedId = r.id),
+          onTap: () => setState(() {
+            _selectedId = r.id;
+            _stageId = null;
+          }),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
             child: Row(
@@ -380,6 +379,8 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   }
 
   Widget _detail() {
+    final stage = _stageId == null ? null : _phases.where((p) => p.id == _stageId).firstOrNull;
+    if (stage != null) return _stageDetail(stage);
     final r = _selected;
     if (r == null) {
       return const DeskCard(
@@ -413,13 +414,23 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                       children: [
                         Text(r.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 4),
-                        DeskStatusChip(label: _stageLabel(phase), tone: DeskChipTone.red),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            DeskStatusChip(label: _stageLabel(phase), tone: DeskChipTone.red),
+                            if (office) const _LockedChip(),
+                            if (!r.uploadRequired) const DeskStatusChip(label: 'Download only', tone: DeskChipTone.yellow),
+                          ],
+                        ),
                       ],
                     ),
                   ),
+                  // Office-issued documents are managed by that office
+                  // (mockup): editing is still possible from the menu.
                   OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _edit(r),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    onPressed: _busy || office ? null : () => _edit(r),
+                    icon: Icon(office ? Icons.lock_outline : Icons.edit_outlined, size: 16),
                     label: const Text('Edit Information'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF7A1424),
@@ -435,9 +446,12 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                         await _run(() => _service.move(r.id, up: v == 'up'), 'Order updated.');
                       } else if (v == 'delete') {
                         await _delete(r);
+                      } else if (v == 'edit') {
+                        await _edit(r);
                       }
                     },
                     itemBuilder: (context) => [
+                      if (office) const PopupMenuItem(value: 'edit', child: Text('Edit details anyway')),
                       const PopupMenuItem(value: 'up', child: Text('Move up')),
                       const PopupMenuItem(value: 'down', child: Text('Move down')),
                       PopupMenuItem(
@@ -457,27 +471,27 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                 _Info(icon: Icons.layers_outlined, label: 'Stage', value: _stageLabel(phase)),
               ),
               _pair(
-                office
-                    ? _Info(icon: Icons.local_hospital_outlined, label: 'Issued By', value: r.issuedBy!)
-                    : _Info(
-                        icon: Icons.copy_all_outlined,
-                        label: 'Photocopies Required',
-                        value: '${r.copiesRequired} cop${r.copiesRequired == 1 ? 'y' : 'ies'}',
-                      ),
                 _Info(
-                  icon: Icons.upload_file_outlined,
-                  label: 'Students',
-                  value: r.uploadRequired ? 'Upload this document' : 'Download only (nothing to upload)',
+                  icon: Icons.copy_all_outlined,
+                  label: 'Photocopies Required',
+                  value: '${r.copiesRequired} cop${r.copiesRequired == 1 ? 'y' : 'ies'}',
                 ),
+                const _Info(icon: Icons.groups_outlined, label: 'Visible To', value: 'Students and Instructors'),
               ),
-              _pair(
-                _Info(
-                  icon: Icons.schedule,
-                  label: 'Last Updated',
-                  value: r.updatedAt == null ? 'Not changed yet' : formatPh(r.updatedAt!, 'MMM d, yyyy'),
+              if (office)
+                _pair(
+                  _Info(icon: Icons.local_hospital_outlined, label: 'Issued By', value: r.issuedBy!),
+                  const _Info(icon: Icons.verified_user_outlined, label: 'Template', value: 'Not required'),
+                )
+              else
+                _pair(
+                  _Info(
+                    icon: Icons.schedule,
+                    label: 'Last Updated',
+                    value: r.updatedAt == null ? 'Not changed yet' : formatPh(r.updatedAt!, 'MMM d, yyyy'),
+                  ),
+                  _Info(icon: Icons.person_outline, label: 'Updated By', value: r.updatedByName ?? '--'),
                 ),
-                _Info(icon: Icons.person_outline, label: 'Updated By', value: r.updatedByName ?? '--'),
-              ),
               const SizedBox(height: 6),
               const Text('Description / Instructions', style: TextStyle(fontSize: 10.5, color: DeskColors.muted)),
               const SizedBox(height: 6),
@@ -498,41 +512,45 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
         ),
         const SizedBox(height: 16),
         DeskCard(
-          title: 'Template / Format',
+          // Office-issued documents (Medical Certificate from the Clinic,
+          // Enrollment Form from the Library) never have a TrackIT template:
+          // students submit the actual issued document (mockup "Locked").
+          title: office ? null : 'Template / Format',
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Transform.translate(
-                offset: const Offset(0, -10),
-                child: Text(
-                  office
-                      ? 'Issued by the ${r.issuedBy}: there is no TrackIT template to download or replace.'
-                      : 'Only students can download this file from their side.',
-                  style: const TextStyle(fontSize: 11, color: DeskColors.muted),
-                ),
-              ),
-              // Office-issued documents (Medical Certificate from the Clinic,
-              // Registration Form from the Library) never have a TrackIT
-              // template: students submit the actual issued document.
-              if (office)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFBF4F4),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFEBD3D6)),
+              if (!office)
+                Transform.translate(
+                  offset: const Offset(0, -10),
+                  child: const Text(
+                    'Only students can download this file from their side.',
+                    style: TextStyle(fontSize: 11, color: DeskColors.muted),
                   ),
-                  child: Row(
+                ),
+              if (office)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
+                  child: Column(
                     children: [
-                      const DeskIconBox(icon: Icons.local_hospital_outlined, size: 36),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Students get the ${r.name} from the ${r.issuedBy} and upload the actual issued document. '
-                          'To use a TrackIT template instead, edit this document and clear "Issued by".',
-                          style: const TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF333333)),
-                        ),
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: const BoxDecoration(color: Color(0xFFF8E9EA), shape: BoxShape.circle),
+                        child: const Icon(Icons.lock_outline, color: DeskColors.maroon, size: 26),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Managed by the ${r.issuedBy}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'This requirement is controlled by the ${r.issuedBy}. Its details can\'t be edited here, '
+                        'and no template is required. Students upload the actual issued document.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, height: 1.45, color: DeskColors.muted),
                       ),
                     ],
                   ),
@@ -632,6 +650,267 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
     );
   }
 
+  // ------------------------------------------------- Stage 4 (Final Details)
+
+  Widget _stageItem(AdminRequirementPhase p) {
+    final selected = p.id == _stageId;
+    final fg = selected ? Colors.white : const Color(0xFF1F1F1F);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: selected ? const Color(0xFF7A1424) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: selected ? const Color(0xFF7A1424) : const Color(0xFFDDDDDD)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() {
+            _stageId = p.id;
+            _selectedId = null;
+          }),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: selected ? Colors.white24 : const Color(0xFFF8E9EA),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(Icons.assignment_ind_outlined, size: 16, color: selected ? Colors.white : DeskColors.maroon),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(p.title, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+                      Text(
+                        'Student form · no documents',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9.5, color: selected ? Colors.white70 : DeskColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: selected ? Colors.white24 : const Color(0xFFEDEDED),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('Form', style: TextStyle(fontSize: 9, color: selected ? Colors.white : const Color(0xFF6B6B6B))),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editStageDescription(AdminRequirementPhase p) async {
+    final controller = TextEditingController(text: p.description);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Stage ${p.order} description'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 300,
+            decoration: const InputDecoration(
+              helperText: 'Students see this under the stage title in OJT Requirements.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: DeskColors.maroon),
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (text == null || text.isEmpty || text == p.description) return;
+    await _run(() => _service.updatePhaseDescription(p.id, text), 'Description saved.');
+  }
+
+  Widget _stageDetail(AdminRequirementPhase p) {
+    final progress = _service.finalDetails;
+    const sections = [
+      (Icons.badge_outlined, 'Student Information', 'First, middle and last name, extension'),
+      (Icons.apartment_outlined, 'Company Details', 'Registered company name and industry'),
+      (Icons.place_outlined, 'Company Address', 'Province, city, barangay, house number / street'),
+      (Icons.event_outlined, 'OJT Start Date', 'When the student starts their OJT'),
+      (Icons.supervisor_account_outlined, 'Supervisor Information', 'Supervisor name and contact number'),
+    ];
+    return ListView(
+      children: [
+        DeskCard(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: const Color(0xFF7A1424),
+                child: Text('${p.order}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    const Wrap(
+                      spacing: 6,
+                      children: [
+                        DeskStatusChip(label: 'Student form', tone: DeskChipTone.red),
+                        DeskStatusChip(label: 'No documents', tone: DeskChipTone.red),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _editStageDescription(p),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit Description'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7A1424),
+                  side: const BorderSide(color: Color(0xFF7A1424)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  shape: const StadiumBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: DeskCard(
+                  title: 'What Students Fill In',
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Transform.translate(
+                        offset: const Offset(0, -10),
+                        child: const Text(
+                          'Their OJT Final Information form, once Stages 1-3 are complete.',
+                          style: TextStyle(fontSize: 11, color: DeskColors.muted),
+                        ),
+                      ),
+                      for (final s in sections)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFE6E1E1)),
+                          ),
+                          child: Row(
+                            children: [
+                              DeskIconBox(icon: s.$1, size: 30),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(s.$2, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                                    Text(s.$3, style: const TextStyle(fontSize: 10.5, color: DeskColors.muted)),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF2E7D32)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DeskCard(
+                  title: 'Stage Description',
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF6F3F3),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE7E1E1)),
+                        ),
+                        child: Text(
+                          p.description.isEmpty ? 'No description yet.' : p.description,
+                          style: const TextStyle(fontSize: 12.5, height: 1.45, color: Color(0xFF333333)),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Text('Submitted', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      if (progress == null)
+                        const Text('Not available right now.', style: TextStyle(fontSize: 12, color: DeskColors.muted))
+                      else ...[
+                        Text(
+                          '${progress.submitted} of ${progress.total} student${progress.total == 1 ? '' : 's'}'
+                          '${progress.academicYear == null ? '' : ' (${progress.academicYear})'} have submitted their final details.',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF333333)),
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: progress.total == 0 ? 0 : progress.submitted / progress.total,
+                            minHeight: 10,
+                            backgroundColor: const Color(0xFFEDE6E6),
+                            valueColor: const AlwaysStoppedAnimation(Color(0xFF7A1424)),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFBF4F4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Once submitted, the details appear on the student\'s profile, in the HTE Directory '
+                          'and in reports. Only the supervisor can be changed afterwards.',
+                          style: TextStyle(fontSize: 11, height: 1.4, color: Color(0xFF555555)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _pair(Widget a, Widget b) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Row(children: [Expanded(child: a), const SizedBox(width: 16), Expanded(child: b)]),
@@ -651,6 +930,26 @@ Future<PickedFile?> _pickTemplate() async {
   final file = picked?.files.single;
   if (file == null || file.bytes == null) return null;
   return file;
+}
+
+class _LockedChip extends StatelessWidget {
+  const _LockedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: const Color(0xFFEDEDED), borderRadius: BorderRadius.circular(10)),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock_outline, size: 11, color: Color(0xFF6B6B6B)),
+          SizedBox(width: 3),
+          Text('Locked', style: TextStyle(fontSize: 10.5, color: Color(0xFF6B6B6B))),
+        ],
+      ),
+    );
+  }
 }
 
 class _Info extends StatelessWidget {
