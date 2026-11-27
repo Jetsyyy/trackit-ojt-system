@@ -33,16 +33,69 @@
 
   <title>TrackIT</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- TrackIT loading screen while the app downloads. It matches the app's
+       own splash (lib/widgets/common/trackit_splash.dart) and fades away on
+       the app's first frame. -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #4E0E19; }
+    #trackit-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 42%, #8A1E30 0%, #6E1423 45%, #4E0E19 100%);
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      transition: opacity .45s ease;
+    }
+    #trackit-splash.hide { opacity: 0; pointer-events: none; }
+    #trackit-splash .logo {
+      width: 250px; max-width: 62vw; height: auto;
+      animation: ts-in .7s cubic-bezier(.22,1,.36,1) both, ts-breath 1.8s ease-in-out .7s infinite alternate;
+    }
+    #trackit-splash .bar {
+      position: relative; overflow: hidden; width: 132px; height: 3px; margin-top: 26px;
+      border-radius: 3px; background: rgba(255,255,255,.2);
+      animation: ts-fade .7s ease both;
+    }
+    #trackit-splash .bar::after {
+      content: ""; position: absolute; top: 0; bottom: 0; width: 46px; left: -46px;
+      border-radius: 3px; background: #FF7A1A;
+      animation: ts-sweep 1.3s ease-in-out infinite;
+    }
+    #trackit-splash .tag {
+      margin-top: 16px; color: rgba(255,255,255,.8); font-size: 11.5px; font-weight: 600; letter-spacing: 3px;
+      animation: ts-fade .7s ease both;
+    }
+    #trackit-splash .school {
+      position: absolute; left: 16px; right: 16px; bottom: 22px; text-align: center;
+      color: rgba(255,255,255,.6); font-size: 11.5px; font-weight: 600; line-height: 1.5;
+    }
+    #trackit-splash .school span { display: block; color: rgba(255,255,255,.45); font-size: 10.5px; font-weight: 400; }
+    @keyframes ts-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+    @keyframes ts-breath { from { transform: scale(1); } to { transform: scale(1.025); } }
+    @keyframes ts-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ts-sweep { from { left: -46px; } to { left: 132px; } }
+    @media (prefers-reduced-motion: reduce) {
+      #trackit-splash .logo { animation: none; }
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="trackit-splash" role="status" aria-label="Loading TrackIT">
+    <img class="logo" src="icons/trackit-logo-white.png" alt="TrackIT">
+    <div class="bar"></div>
+    <div class="tag">OJT TRACKING SYSTEM</div>
+    <div class="school">Dalubhasaan ng Lunsod ng San Pablo<span>College of Computer Studies and Technology</span></div>
+  </div>
+  <script>
+    // Hand over to the app once it has drawn its first frame (the app's
+    // own splash looks the same, so the swap is invisible).
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('trackit-splash');
+      if (!el) return;
+      el.classList.add('hide');
+      setTimeout(function () { el.remove(); }, 500);
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

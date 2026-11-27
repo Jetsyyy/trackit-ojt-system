@@ -4,7 +4,7 @@ import '../../services/api_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/instructor_auth_service.dart';
 import '../../services/session_role.dart';
-import '../../utils/app_colors.dart';
+import '../../widgets/common/trackit_splash.dart';
 import '../../utils/app_portal.dart';
 import '../admin/admin_bootstrap.dart';
 import '../student/student_bootstrap.dart';
@@ -38,7 +38,12 @@ class _AuthGateState extends State<AuthGate> {
     _checkSession();
   }
 
+  // The splash stays up at least this long on start-up, so the logo
+  // animation is seen instead of flashing past.
+  static const _minSplash = Duration(milliseconds: 1400);
+
   Future<void> _checkSession() async {
+    final shown = Stopwatch()..start();
     final stored = await _roleStore.load();
     if (stored.expired) {
       // Logged in without "Remember me" in an earlier browser/app session.
@@ -61,6 +66,8 @@ class _AuthGateState extends State<AuthGate> {
       final token = await _adminAuthService.loadStoredToken();
       if (token != null) resolvedRole = SessionRole.admin;
     }
+    final wait = _minSplash - shown.elapsed;
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
     if (!mounted) return;
     setState(() {
       _activeRole = resolvedRole;
@@ -84,15 +91,19 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_checking) {
-      return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primaryMaroon),
-        ),
-      );
-    }
+    // Fades from the splash to the login page or the user's home.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      child: KeyedSubtree(
+        key: ValueKey(_checking ? 'splash' : 'role-${_activeRole?.name ?? 'none'}'),
+        child: _checking ? const TrackitSplash() : _screen(),
+      ),
+    );
+  }
 
+  Widget _screen() {
     switch (_activeRole) {
       case SessionRole.student:
         return StudentBootstrap(client: _client, onLoggedOut: _handleLoggedOut);
