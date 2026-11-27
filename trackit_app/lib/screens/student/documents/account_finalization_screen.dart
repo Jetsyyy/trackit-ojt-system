@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../models/company_details.dart';
+import '../../../models/ojt_requirement_phase.dart';
 import '../../../models/student_profile.dart';
 import '../../../services/api_client.dart';
 import '../../../services/student_profile_service.dart';
 import '../../../utils/ph_locations.dart';
 import '../../../utils/ph_time.dart';
+import '../../../widgets/common/back_nav_header.dart';
+import '../../../widgets/student/documents/phase_card.dart';
 import '../../../widgets/student/student_ui.dart';
 
 /// Account Details Finalization (TrackIT student mockup "OJT Final
@@ -16,7 +19,11 @@ class AccountFinalizationScreen extends StatefulWidget {
   final StudentProfileService service;
   final StudentProfile profile;
 
-  const AccountFinalizationScreen({super.key, required this.service, required this.profile});
+  /// When opened as Stage 4 (Final Details) of OJT Requirements: shows
+  /// the usual Return header and the stage card above the form (Figma).
+  final OjtRequirementPhase? stage;
+
+  const AccountFinalizationScreen({super.key, required this.service, required this.profile, this.stage});
 
   @override
   State<AccountFinalizationScreen> createState() => _AccountFinalizationScreenState();
@@ -162,11 +169,16 @@ class _AccountFinalizationScreenState extends State<AccountFinalizationScreen> {
         ? const <String>[]
         : [...phCitiesByProvince[_province]!, otherLocation];
     final typeCity = _province == otherLocation || _city == otherLocation;
+    final stage = widget.stage;
     return Scaffold(
-      backgroundColor: StudentColors.page,
+      backgroundColor: stage != null ? Colors.transparent : StudentColors.page,
       body: SafeArea(
+        top: stage == null,
         child: Column(
           children: [
+            if (stage != null)
+              const BackNavHeader(subtitle: 'OJT Requirements')
+            else
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
@@ -195,6 +207,20 @@ class _AccountFinalizationScreenState extends State<AccountFinalizationScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                   children: [
+                    if (stage != null) ...[
+                      StudentCard(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+                        child: Row(
+                          children: [
+                            PhaseNumber(number: stage.order),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(stage.title, style: studentSerif(size: 24, weight: FontWeight.w600))),
+                            phaseStatusPill(stage),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     const Text(
                       'OJT Final Information',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: StudentColors.heading),

@@ -6,6 +6,7 @@ const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { notifyInstructorForStudent } = require('../utils/notifyInstructor');
 const { requirementFileFilter } = require('../utils/requirementFileTypes');
+const { loadPhasesAndTemplates, buildPhases, companyConfirmedFor } = require('../utils/requirementPhases');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -19,25 +20,21 @@ const upload = multer({
 
 router.get('/', async (req, res) => {
   try {
-    const phases = await pool.query(
-      'SELECT * FROM ojt_requirement_phases ORDER BY order_index ASC',
-    );
-    const templates = await pool.query(
-      'SELECT * FROM ojt_requirement_templates ORDER BY phase_id, sort_order ASC',
-    );
-    const submissions = await pool.query(
-      'SELECT * FROM student_requirement_submissions WHERE student_id = $1',
-      [req.studentId],
-    );
+    const [{ phases, templates }, submissions, companyConfirmed] = await Promise.all([
+      loadPhasesAndTemplates(),
+      pool.query('SELECT * FROM student_requirement_submissions WHERE student_id = $1', [req.studentId]),
+      companyConfirmedFor(req.studentId),
+    ]);
     const submissionsByTemplate = new Map(
-      submissions.rows.map((s) => [s.requirement_template_id, s]),
+      submissions.rows.map((s) => [String(s.requirement_template_id), s]),
     );
 
-    const phasesWithDocs = phases.rows.map((phase) => {
-      const documents = templates.rows
-        .filter((t) => t.phase_id === phase.id)
-        .map((template) => {
-          const submission = submissionsByTemplate.get(template.id);
+    const result = buildPhases({
+      phases,
+      templates,
+      submissionsByTemplate,
+      companyConfirmed,
+      toDocument: (template, submission) => {
           // Office-issued requirements (System Revisions item 6) never
           // expose a template: the student gets them from that office.
           const issuedBy = template.issued_by || null;
@@ -56,30 +53,7 @@ router.get('/', async (req, res) => {
             submittedAt: submission ? submission.submitted_at : null,
             remarks: submission ? submission.remarks : null,
           };
-        });
-      const fulfilled = documents.every(
-        (d) => d.status === 'submitted' || d.status === 'approved',
-      );
-      return {
-        id: phase.id,
-        order: phase.order_index,
-        title: phase.title,
-        description: phase.description,
-        documents,
-        fulfilled,
-      };
-    });
-
-    // Sequential lock/unlock: a phase can only be in progress or completed
-    // if every earlier phase is fulfilled.
-    let previousCompleted = true;
-    const result = phasesWithDocs.map((phase) => {
-      let status;
-      if (!previousCompleted) status = 'locked';
-      else if (phase.fulfilled) status = 'completed';
-      else status = 'inProgress';
-      previousCompleted = phase.fulfilled;
-      return { ...phase, status };
+      },
     });
 
     res.json({ success: true, phases: result });
@@ -140,6 +114,20 @@ router.post('/:templateId/submit', upload.single('file'), async (req, res) => {
     const fileUrl = req.file ? req.file.url : null;
     if (!fileName) {
       return res.status(400).json({ success: false, message: 'No file provided.' });
+    }
+    const template = await pool.query(
+      'SELECT upload_required, retired_at FROM ojt_requirement_templates WHERE id = $1',
+      [templateId],
+    );
+    const t = template.rows[0];
+    if (!t || t.retired_at) {
+      return res.status(404).json({ success: false, message: 'This document is no longer on the requirements list.' });
+    }
+    if (t.upload_required === false) {
+      return res.status(400).json({
+        success: false,
+        message: 'This document only needs to be downloaded. There is nothing to upload for it.',
+      });
     }
 
     const result = await pool.query(

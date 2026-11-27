@@ -21,6 +21,10 @@ class OjtRequirementDoc {
   /// Instructor feedback explaining a rejection/re-upload request.
   final String? remarks;
 
+  /// False for documents students only download (e.g. MOU / MOA in Stage
+  /// 2): there is nothing to upload and they never hold up a stage.
+  final bool uploadRequired;
+
   const OjtRequirementDoc({
     required this.id,
     required this.name,
@@ -35,6 +39,7 @@ class OjtRequirementDoc {
     this.uploadedFileUrl,
     this.submittedAt,
     this.remarks,
+    this.uploadRequired = true,
   });
 
   factory OjtRequirementDoc.fromJson(Map<String, dynamic> json) {
@@ -59,6 +64,7 @@ class OjtRequirementDoc {
           ? DateTime.parse(json['submittedAt'] as String)
           : null,
       remarks: json['remarks'] as String?,
+      uploadRequired: json['uploadRequired'] as bool? ?? true,
     );
   }
 
@@ -82,6 +88,7 @@ class OjtRequirementDoc {
       uploadedFileUrl: uploadedFileUrl ?? this.uploadedFileUrl,
       submittedAt: submittedAt ?? this.submittedAt,
       remarks: remarks,
+      uploadRequired: uploadRequired,
     );
   }
 }

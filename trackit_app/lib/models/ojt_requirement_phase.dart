@@ -10,6 +10,10 @@ class OjtRequirementPhase {
   final PhaseStatus status;
   final List<OjtRequirementDoc> documents;
 
+  /// 'documents', or 'final_details' for Stage 4: the student's final
+  /// company and supervisor information form (no documents).
+  final String kind;
+
   const OjtRequirementPhase({
     required this.id,
     required this.order,
@@ -17,10 +21,14 @@ class OjtRequirementPhase {
     required this.description,
     required this.status,
     required this.documents,
+    this.kind = 'documents',
   });
+
+  bool get isFinalDetails => kind == 'final_details';
 
   bool get isFulfilled => documents.every(
     (d) =>
+        !d.uploadRequired ||
         d.status == RequirementDocStatus.submitted ||
         d.status == RequirementDocStatus.approved,
   );
@@ -38,6 +46,7 @@ class OjtRequirementPhase {
       documents: (json['documents'] as List<dynamic>)
           .map((d) => OjtRequirementDoc.fromJson(d as Map<String, dynamic>))
           .toList(),
+      kind: json['kind'] as String? ?? 'documents',
     );
   }
 
@@ -52,6 +61,7 @@ class OjtRequirementPhase {
       description: description,
       status: status ?? this.status,
       documents: documents ?? this.documents,
+      kind: kind,
     );
   }
 }

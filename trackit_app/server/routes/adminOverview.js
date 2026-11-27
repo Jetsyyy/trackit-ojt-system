@@ -91,7 +91,7 @@ router.get('/', async (req, res) => {
          FROM student_requirement_submissions srs
          JOIN students s ON s.id = srs.student_id
          JOIN ojt_requirement_templates ort ON ort.id = srs.requirement_template_id
-         WHERE srs.student_id = ANY($1::bigint[]) AND srs.status = 'submitted'
+         WHERE srs.student_id = ANY($1::bigint[]) AND srs.status = 'submitted' AND ort.retired_at IS NULL
          ORDER BY srs.submitted_at ASC`,
         [studentIds],
       ),

@@ -501,6 +501,8 @@ class _TeacherRequirementsDeskState extends State<TeacherRequirementsDesk> {
             if (!_expanded.remove(phase.id)) _expanded.add(phase.id);
           }),
           children: [
+            if (phase.isFinalDetails)
+              Text(phase.finalDetailsNote, style: const TextStyle(fontSize: 12, color: DeskColors.muted)),
             for (final d in phase.documents)
               _DocCard(
                 name: d.name,

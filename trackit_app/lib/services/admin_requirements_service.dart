@@ -13,6 +13,10 @@ class AdminRequirement {
   final String? templateUrl;
   final String? templateName;
 
+  /// False for "download only" documents (e.g. MOU / MOA): students just
+  /// download the template, there's nothing to upload.
+  final bool uploadRequired;
+
   /// How many student submissions already use it; a used requirement
   /// can't be deleted.
   final int submissionCount;
@@ -30,6 +34,7 @@ class AdminRequirement {
     this.issuedBy,
     this.templateUrl,
     this.templateName,
+    this.uploadRequired = true,
     required this.submissionCount,
     this.copiesRequired = 1,
     this.updatedAt,
@@ -47,6 +52,7 @@ class AdminRequirement {
       issuedBy: json['issuedBy'] as String?,
       templateUrl: json['templateUrl'] as String?,
       templateName: json['templateName'] as String?,
+      uploadRequired: json['uploadRequired'] as bool? ?? true,
       submissionCount: json['submissionCount'] as int? ?? 0,
       copiesRequired: json['copiesRequired'] as int? ?? 1,
       updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt'] as String) : null,
@@ -64,12 +70,19 @@ class AdminRequirementPhase {
   final String title;
   final List<AdminRequirement> requirements;
 
+  /// 'final_details' for Stage 4: the student's final company and
+  /// supervisor information form, which has no documents.
+  final String kind;
+
   const AdminRequirementPhase({
     required this.id,
     required this.order,
     required this.title,
     required this.requirements,
+    this.kind = 'documents',
   });
+
+  bool get isFinalDetails => kind == 'final_details';
 
   factory AdminRequirementPhase.fromJson(Map<String, dynamic> json) {
     return AdminRequirementPhase(
@@ -79,6 +92,7 @@ class AdminRequirementPhase {
       requirements: (json['requirements'] as List<dynamic>)
           .map((r) => AdminRequirement.fromJson(r as Map<String, dynamic>))
           .toList(),
+      kind: json['kind'] as String? ?? 'documents',
     );
   }
 }
@@ -104,6 +118,7 @@ class AdminRequirementsService {
     required String description,
     String? issuedBy,
     int copiesRequired = 1,
+    bool uploadRequired = true,
   }) async {
     final response = await client.post(
       '/api/admin/requirements',
@@ -113,6 +128,7 @@ class AdminRequirementsService {
         'description': description,
         'issuedBy': issuedBy,
         'copiesRequired': copiesRequired,
+        'uploadRequired': uploadRequired,
       },
     );
     return (response['requirement'] as Map<String, dynamic>?)?['id'] as int?;
@@ -125,6 +141,7 @@ class AdminRequirementsService {
     String? issuedBy,
     int? copiesRequired,
     int? phaseId,
+    bool? uploadRequired,
   }) async {
     await client.patch(
       '/api/admin/requirements/$id',
@@ -133,6 +150,7 @@ class AdminRequirementsService {
         'description': description,
         'issuedBy': issuedBy ?? '',
         if (copiesRequired != null) 'copiesRequired': copiesRequired,
+        if (uploadRequired != null) 'uploadRequired': uploadRequired,
         if (phaseId != null) 'phaseId': phaseId,
       },
     );

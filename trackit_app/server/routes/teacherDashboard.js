@@ -101,9 +101,11 @@ router.get('/', async (req, res) => {
       else if (stage === 'readyForDeployment') readyForDeployment++;
     }
 
+    // Retired documents (no longer on the list) aren't waiting for review.
     const reqReviewResult = await pool.query(
-      `SELECT COUNT(*) FROM student_requirement_submissions
-       WHERE student_id = ANY($1::bigint[]) AND status = 'submitted'`,
+      `SELECT COUNT(*) FROM student_requirement_submissions s
+       JOIN ojt_requirement_templates t ON t.id = s.requirement_template_id
+       WHERE s.student_id = ANY($1::bigint[]) AND s.status = 'submitted' AND t.retired_at IS NULL`,
       [studentIds],
     );
     const correctionsResult = await pool.query(

@@ -34,7 +34,8 @@ class RequirementDocTile extends StatelessWidget {
       RequirementDocStatus.submitted || RequirementDocStatus.pending => ('Pending for Verification', StudentColors.pending),
       RequirementDocStatus.missing => (null, null),
     };
-    final canUpload = d.status == RequirementDocStatus.missing || d.status == RequirementDocStatus.rejected;
+    final canUpload = d.uploadRequired &&
+        (d.status == RequirementDocStatus.missing || d.status == RequirementDocStatus.rejected);
     final officeIssued = d.issuedBy != null && d.issuedBy!.trim().isNotEmpty;
 
     final buttons = <Widget>[
@@ -144,7 +145,9 @@ class RequirementDocTile extends StatelessWidget {
                     Text(
                       officeIssued
                           ? 'Get this document from the ${d.issuedBy}, then upload it here.'
-                          : 'No file needed yet.',
+                          : !d.uploadRequired
+                              ? 'The template will be available here to download.'
+                              : 'No file needed yet.',
                       style: const TextStyle(fontSize: 11, color: StudentColors.muted),
                     )
                   else

@@ -30,6 +30,8 @@ function toRequirementJson(t) {
     description: t.description,
     sortOrder: t.sort_order,
     issuedBy: t.issued_by || null,
+    // false: students only download it (e.g. MOU / MOA); nothing to upload.
+    uploadRequired: t.upload_required !== false,
     templateUrl: t.template_url || null,
     templateName: t.template_name || null,
     submissionCount: t.submission_count != null ? Number(t.submission_count) : undefined,
@@ -67,6 +69,7 @@ router.get('/', async (req, res) => {
          FROM ojt_requirement_templates t
          LEFT JOIN student_requirement_submissions s ON s.requirement_template_id = t.id
          LEFT JOIN admins a ON a.id = t.updated_by
+         WHERE t.retired_at IS NULL
          GROUP BY t.id, a.name
          ORDER BY t.phase_id, t.sort_order ASC, t.id ASC`,
       ),
@@ -78,6 +81,8 @@ router.get('/', async (req, res) => {
         order: p.order_index,
         title: p.title,
         description: p.description,
+        // 'final_details': the student's company and supervisor form, no documents.
+        kind: p.kind || 'documents',
         requirements: templates.rows
           .filter((t) => Number(t.phase_id) === Number(p.id))
           .map(toRequirementJson),
@@ -98,17 +103,23 @@ router.post('/', async (req, res) => {
     if (!name) {
       return res.status(400).json({ success: false, message: 'Requirement name is required.' });
     }
-    const phase = await pool.query('SELECT id FROM ojt_requirement_phases WHERE id = $1', [phaseId]);
+    const phase = await pool.query('SELECT id, kind FROM ojt_requirement_phases WHERE id = $1', [phaseId]);
     if (phase.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Pick a valid phase.' });
+    }
+    if (phase.rows[0].kind === 'final_details') {
+      return res.status(400).json({
+        success: false,
+        message: 'Stage 4 is the final details form and has no documents. Pick another stage.',
+      });
     }
     const inserted = await pool.query(
       `INSERT INTO ojt_requirement_templates
          (phase_id, name, description, issued_by, has_template, sort_order,
-          copies_required, updated_at, updated_by)
+          copies_required, upload_required, updated_at, updated_by)
        VALUES ($1, $2, $3, $4, false,
                (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ojt_requirement_templates WHERE phase_id = $1),
-               $5, now(), $6)
+               $5, $7, now(), $6)
        RETURNING *`,
       [
         phaseId,
@@ -117,6 +128,7 @@ router.post('/', async (req, res) => {
         cleanText(req.body.issuedBy),
         copiesFrom(req.body.copiesRequired) ?? 1,
         req.adminId,
+        req.body.uploadRequired !== false,
       ],
     );
     res.status(201).json({ success: true, requirement: toRequirementJson(inserted.rows[0]) });
@@ -164,6 +176,10 @@ router.patch('/:id', async (req, res) => {
         );
       }
     }
+    if (req.body.uploadRequired !== undefined) {
+      values.push(req.body.uploadRequired !== false);
+      fields.push(`upload_required = $${values.length}`);
+    }
     if (req.body.copiesRequired !== undefined) {
       const copies = copiesFrom(req.body.copiesRequired);
       if (copies === null) {
@@ -175,9 +191,15 @@ router.patch('/:id', async (req, res) => {
     if (req.body.phaseId !== undefined) {
       // Moving to another stage puts it at the end of that stage.
       const phaseId = Number(req.body.phaseId);
-      const phase = await pool.query('SELECT id FROM ojt_requirement_phases WHERE id = $1', [phaseId]);
+      const phase = await pool.query('SELECT id, kind FROM ojt_requirement_phases WHERE id = $1', [phaseId]);
       if (phase.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'Pick a valid stage.' });
+      }
+      if (phase.rows[0].kind === 'final_details') {
+        return res.status(400).json({
+          success: false,
+          message: 'Stage 4 is the final details form and has no documents. Pick another stage.',
+        });
       }
       const current = await pool.query('SELECT phase_id FROM ojt_requirement_templates WHERE id = $1', [id]);
       if (current.rows[0] && Number(current.rows[0].phase_id) !== phaseId) {
@@ -265,9 +287,17 @@ router.delete('/:id', async (req, res) => {
       [id],
     );
     if (used.rows[0].count > 0) {
-      return res.status(409).json({
-        success: false,
-        message: `${used.rows[0].count} student submission(s) already use this requirement, so it can't be deleted. Rename it instead.`,
+      const retired = await pool.query(
+        'UPDATE ojt_requirement_templates SET retired_at = now(), updated_at = now(), updated_by = $2 WHERE id = $1 AND retired_at IS NULL RETURNING id',
+        [id, req.adminId],
+      );
+      if (retired.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Requirement not found.' });
+      }
+      return res.json({
+        success: true,
+        retired: true,
+        message: `Removed from the requirements. The ${used.rows[0].count} earlier student submission(s) are kept in the records.`,
       });
     }
     const deleted = await pool.query(

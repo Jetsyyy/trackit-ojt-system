@@ -29,11 +29,17 @@ function hrs(n) {
 
 // students: rows from teacherStudents.loadAssignedStudents.
 async function buildRecords(students) {
-  const totalResult = await pool.query('SELECT COUNT(*)::int AS total FROM ojt_requirement_templates');
+  // Only documents students must upload (not retired, not download-only).
+  const totalResult = await pool.query(
+    'SELECT COUNT(*)::int AS total FROM ojt_requirement_templates WHERE retired_at IS NULL AND upload_required',
+  );
   const totalRequirements = totalResult.rows[0].total;
   const approved = await pool.query(
-    `SELECT student_id, COUNT(*)::int AS count FROM student_requirement_submissions
-     WHERE student_id = ANY($1::bigint[]) AND status = 'approved' GROUP BY student_id`,
+    `SELECT s.student_id, COUNT(*)::int AS count FROM student_requirement_submissions s
+     JOIN ojt_requirement_templates t ON t.id = s.requirement_template_id
+     WHERE s.student_id = ANY($1::bigint[]) AND s.status = 'approved'
+       AND t.retired_at IS NULL AND t.upload_required
+     GROUP BY s.student_id`,
     [students.map((s) => s.id)],
   );
   const approvedBy = new Map(approved.rows.map((r) => [Number(r.student_id), r.count]));

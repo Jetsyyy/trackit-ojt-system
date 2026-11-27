@@ -91,7 +91,10 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   Future<void> _add() async {
     final result = await showDialog<_RequirementForm>(
       context: context,
-      builder: (context) => _RequirementDialog(phases: _phases, initialPhaseId: _selected?.phaseId),
+      builder: (context) => _RequirementDialog(
+        phases: _phases.where((p) => !p.isFinalDetails).toList(),
+        initialPhaseId: _selected?.phaseId,
+      ),
     );
     if (result == null) return;
     await _run(() async {
@@ -101,6 +104,7 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
         description: result.description,
         issuedBy: result.issuedBy,
         copiesRequired: result.copies,
+        uploadRequired: result.uploadRequired,
       );
       if (id != null) {
         _selectedId = id;
@@ -119,7 +123,10 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   Future<void> _edit(AdminRequirement r) async {
     final result = await showDialog<_RequirementForm>(
       context: context,
-      builder: (context) => _RequirementDialog(phases: _phases, existing: r),
+      builder: (context) => _RequirementDialog(
+        phases: _phases.where((p) => !p.isFinalDetails).toList(),
+        existing: r,
+      ),
     );
     if (result == null) return;
     await _run(() async {
@@ -130,6 +137,7 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
         issuedBy: result.issuedBy,
         copiesRequired: result.copies,
         phaseId: result.phaseId != r.phaseId ? result.phaseId : null,
+        uploadRequired: result.uploadRequired,
       );
       if (result.file != null) {
         await _service.uploadTemplate(
@@ -170,11 +178,13 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   Future<void> _delete(AdminRequirement r) async {
     final ok = await _confirm(
       'Delete "${r.name}"?',
-      'It will be removed from every student\'s requirements. A requirement that students already submitted can\'t be deleted.',
+      r.submissionCount > 0
+          ? 'It will be removed from every student\'s requirements. The ${r.submissionCount} earlier submission(s) are kept in the records.'
+          : 'It will be removed from every student\'s requirements.',
       'Delete',
     );
     if (ok != true) return;
-    await _run(() => _service.delete(r.id), 'Requirement deleted.');
+    await _run(() => _service.delete(r.id), 'Requirement removed.');
   }
 
   Future<bool?> _confirm(String title, String body, String action) {
@@ -246,7 +256,16 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                         ],
                       ),
                     ),
-                    if (p.requirements.isEmpty)
+                    if (p.isFinalDetails)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8, left: 4),
+                        child: Text(
+                          'No documents. Students fill in their final company, address and supervisor '
+                          'information here (OJT Final Information form).',
+                          style: TextStyle(fontSize: 11, color: DeskColors.muted),
+                        ),
+                      )
+                    else if (p.requirements.isEmpty)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 8, left: 4),
                         child: Text('No documents in this stage yet.', style: TextStyle(fontSize: 11, color: DeskColors.muted)),
@@ -320,7 +339,7 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                           TextSpan(
                             style: TextStyle(fontSize: 9.5, color: sub),
                             children: [
-                              TextSpan(text: '$copies · '),
+                              TextSpan(text: r.uploadRequired ? '$copies · ' : 'Download only · '),
                               r.templateName != null
                                   ? const TextSpan(text: 'Template uploaded')
                                   : TextSpan(
@@ -445,7 +464,11 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
                         label: 'Photocopies Required',
                         value: '${r.copiesRequired} cop${r.copiesRequired == 1 ? 'y' : 'ies'}',
                       ),
-                const _Info(icon: Icons.groups_outlined, label: 'Visible To', value: 'Students and Instructors'),
+                _Info(
+                  icon: Icons.upload_file_outlined,
+                  label: 'Students',
+                  value: r.uploadRequired ? 'Upload this document' : 'Download only (nothing to upload)',
+                ),
               ),
               _pair(
                 _Info(
@@ -690,6 +713,7 @@ class _RequirementForm {
   final String description;
   final String? issuedBy;
   final PickedFile? file;
+  final bool uploadRequired;
 
   const _RequirementForm({
     required this.name,
@@ -698,6 +722,7 @@ class _RequirementForm {
     required this.description,
     required this.issuedBy,
     required this.file,
+    required this.uploadRequired,
   });
 }
 
@@ -719,6 +744,7 @@ class _RequirementDialogState extends State<_RequirementDialog> {
   late final _office = TextEditingController(text: widget.existing?.issuedBy ?? '');
   late int? _phaseId = widget.existing?.phaseId ?? widget.initialPhaseId ?? widget.phases.firstOrNull?.id;
   late int _copies = widget.existing?.copiesRequired ?? 1;
+  late bool _uploadRequired = widget.existing?.uploadRequired ?? true;
   PickedFile? _file;
   String? _error;
 
@@ -849,7 +875,23 @@ class _RequirementDialogState extends State<_RequirementDialog> {
               ),
               const SizedBox(height: 6),
               TextField(controller: _office, style: const TextStyle(fontSize: 13), decoration: deco('Leave empty if students download a template')),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              // "Download only" documents (e.g. MOU / MOA in Stage 2).
+              SwitchListTile(
+                value: _uploadRequired,
+                onChanged: (v) => setState(() => _uploadRequired = v),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                activeThumbColor: DeskColors.maroon,
+                title: const Text('Students upload this document', style: label),
+                subtitle: Text(
+                  _uploadRequired
+                      ? 'Students must upload it before the stage is complete.'
+                      : 'Download only: students just download the template; nothing to upload.',
+                  style: const TextStyle(fontSize: 11, color: DeskColors.muted),
+                ),
+              ),
+              const SizedBox(height: 8),
               const Text.rich(
                 TextSpan(
                   text: 'Template / Format ',
@@ -962,6 +1004,7 @@ class _RequirementDialogState extends State<_RequirementDialog> {
                           description: _description.text.trim(),
                           issuedBy: _office.text.trim().isEmpty ? null : _office.text.trim(),
                           file: _file,
+                          uploadRequired: _uploadRequired,
                         ),
                       );
                     },

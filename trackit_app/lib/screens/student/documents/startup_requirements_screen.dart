@@ -13,8 +13,9 @@ import 'account_finalization_screen.dart';
 import 'confirm_company_details_screen.dart';
 import 'phase_requirements_screen.dart';
 
-/// OJT Requirements (TrackIT student mockup): overall progress, the
-/// reminder, the four phases, and the Account Details Finalization card.
+/// OJT Requirements (System Revision 2, Figma): overall progress, the
+/// reminder and the four stages. Stages 1-3 hold documents; Stage 4 (Final
+/// Details) is the student's final company and supervisor information.
 class StartupRequirementsScreen extends StatefulWidget {
   final OjtRequirementsService service;
   final StudentProfileService profileService;
@@ -58,14 +59,14 @@ class _StartupRequirementsScreenState extends State<StartupRequirementsScreen> {
       await _showLockedDialog();
       return;
     }
+    if (phase.isFinalDetails) {
+      await _openFinalization(phase);
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => StudentBackdrop(
-          child: PhaseRequirementsScreen(
-            phaseId: phase.id,
-            service: widget.service,
-            isFinalPhase: phase.order == _phases.map((p) => p.order).fold<int>(0, (a, b) => a > b ? a : b),
-          ),
+          child: PhaseRequirementsScreen(phaseId: phase.id, service: widget.service),
         ),
       ),
     );
@@ -105,16 +106,19 @@ class _StartupRequirementsScreenState extends State<StartupRequirementsScreen> {
     );
   }
 
-  Future<void> _openFinalization() async {
+  Future<void> _openFinalization(OjtRequirementPhase stage) async {
     final profile = _profile;
     if (profile == null) return;
     final String? result;
     if (_companyDetails == null) {
       result = await Navigator.of(context).push<String>(
         MaterialPageRoute(
-          builder: (context) => AccountFinalizationScreen(
-            service: widget.profileService,
-            profile: profile,
+          builder: (context) => StudentBackdrop(
+            child: AccountFinalizationScreen(
+              service: widget.profileService,
+              profile: profile,
+              stage: stage,
+            ),
           ),
         ),
       );
@@ -145,8 +149,6 @@ class _StartupRequirementsScreenState extends State<StartupRequirementsScreen> {
     return _phases.where((p) => p.status == PhaseStatus.completed).length / _phases.length;
   }
 
-  bool get _allCompleted => _phases.isNotEmpty && _phases.every((p) => p.status == PhaseStatus.completed);
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -172,14 +174,6 @@ class _StartupRequirementsScreenState extends State<StartupRequirementsScreen> {
                         PhaseCard(phase: phase, onTap: () => _openPhase(phase)),
                         const SizedBox(height: 14),
                       ],
-                      const SizedBox(height: 6),
-                      const Text('Details Confirmation', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 12),
-                      _FinalizationCard(
-                        unlocked: _allCompleted,
-                        submittedCompany: _companyDetails?.name,
-                        onTap: _allCompleted ? _openFinalization : null,
-                      ),
                     ],
                   ),
                 ),
@@ -265,70 +259,6 @@ class _ReminderCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FinalizationCard extends StatelessWidget {
-  final bool unlocked;
-  final String? submittedCompany;
-  final VoidCallback? onTap;
-
-  const _FinalizationCard({required this.unlocked, required this.submittedCompany, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = unlocked ? StudentColors.approved : StudentColors.maroon;
-    final message = !unlocked
-        ? 'Complete all pre requisite requirements and start your OJT Journey!'
-        : submittedCompany == null
-            ? 'Requirements Completed. Start Finalizing your Account Information'
-            : 'Submitted for $submittedCompany. Tap to view your details or update your supervisor.';
-    return StudentCard(
-      color: color,
-      onTap: onTap,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(
-                submittedCompany != null ? Icons.verified : Icons.check_circle,
-                color: unlocked ? Colors.white : Colors.white,
-                size: 24,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Account Details Finalization',
-                  style: studentSerif(size: 22, color: Colors.white, weight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            message,
-            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: unlocked ? 0.75 : 1)),
-          ),
-          if (unlocked) ...[
-            const SizedBox(height: 12),
-            Container(
-              height: 26,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                submittedCompany == null ? 'Start Finalization' : 'View Details',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: StudentColors.approved),
-              ),
-            ),
-          ],
         ],
       ),
     );

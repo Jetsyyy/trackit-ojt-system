@@ -3,6 +3,8 @@ const pool = require('../db');
 const { requireInstructorAuth } = require('../middleware/instructorAuth');
 const { loadAssignedStudents } = require('./teacherStudents');
 
+const { REQUIRED_TEMPLATES, loadPhasesAndTemplates, buildPhases, companyConfirmedFor } = require('../utils/requirementPhases');
+
 const router = express.Router();
 router.use(requireInstructorAuth);
 
@@ -30,12 +32,15 @@ router.get('/students', async (req, res) => {
       return res.json({ success: true, students: [] });
     }
 
-    const totalResult = await pool.query('SELECT COUNT(*)::int AS total FROM ojt_requirement_templates');
+    // Only documents students must upload (not retired, not download-only).
+    const totalResult = await pool.query(`SELECT COUNT(*)::int AS total FROM ojt_requirement_templates WHERE ${REQUIRED_TEMPLATES}`);
     const totalDocuments = totalResult.rows[0].total;
 
     const studentIds = students.map((s) => s.id);
     const submissionsResult = await pool.query(
-      'SELECT student_id, status FROM student_requirement_submissions WHERE student_id = ANY($1::bigint[])',
+      `SELECT s.student_id, s.status FROM student_requirement_submissions s
+       JOIN ojt_requirement_templates t ON t.id = s.requirement_template_id
+       WHERE s.student_id = ANY($1::bigint[]) AND t.retired_at IS NULL AND t.upload_required`,
       [studentIds],
     );
     const byStudent = new Map();
@@ -114,20 +119,21 @@ router.get('/students/:studentId', async (req, res) => {
     );
     const student = studentResult.rows[0];
 
-    const [phasesResult, templatesResult, submissionsResult] = await Promise.all([
-      pool.query('SELECT * FROM ojt_requirement_phases ORDER BY order_index ASC'),
-      pool.query('SELECT * FROM ojt_requirement_templates ORDER BY phase_id, sort_order ASC'),
+    const [{ phases: phaseRows, templates }, submissionsResult, companyConfirmed] = await Promise.all([
+      loadPhasesAndTemplates(),
       pool.query('SELECT * FROM student_requirement_submissions WHERE student_id = $1', [studentId]),
+      companyConfirmedFor(studentId),
     ]);
     const submissionsByTemplate = new Map(
-      submissionsResult.rows.map((s) => [s.requirement_template_id, s]),
+      submissionsResult.rows.map((s) => [String(s.requirement_template_id), s]),
     );
 
-    const phasesWithDocs = phasesResult.rows.map((phase) => {
-      const documents = templatesResult.rows
-        .filter((t) => t.phase_id === phase.id)
-        .map((template) => {
-          const submission = submissionsByTemplate.get(template.id);
+    const phases = buildPhases({
+      phases: phaseRows,
+      templates,
+      submissionsByTemplate,
+      companyConfirmed,
+      toDocument: (template, submission) => {
           return {
             id: Number(template.id),
             submissionId: submission ? Number(submission.id) : null,
@@ -140,27 +146,14 @@ router.get('/students/:studentId', async (req, res) => {
             reviewedAt: submission ? submission.reviewed_at : null,
             remarks: submission ? submission.remarks : null,
           };
-        });
-      const fulfilled = documents.every((d) => d.status === 'submitted' || d.status === 'approved');
-      return {
-        id: Number(phase.id),
-        order: phase.order_index,
-        title: phase.title,
-        description: phase.description,
-        documents,
-        fulfilled,
-      };
-    });
-
-    let previousCompleted = true;
-    const phases = phasesWithDocs.map((phase) => {
-      let status;
-      if (!previousCompleted) status = 'locked';
-      else if (phase.fulfilled) status = 'completed';
-      else status = 'inProgress';
-      previousCompleted = phase.fulfilled;
-      return { ...phase, status };
-    });
+      },
+    }).map((phase) => ({
+      ...phase,
+      id: Number(phase.id),
+      // Download-only documents have nothing for the instructor to review.
+      documents: phase.documents.filter((d) => d.uploadRequired),
+      companyConfirmed: phase.kind === 'final_details' ? companyConfirmed : undefined,
+    }));
 
     const customResult = await pool.query(
       `SELECT cr.*, scs.id AS submission_id, scs.status AS submission_status,

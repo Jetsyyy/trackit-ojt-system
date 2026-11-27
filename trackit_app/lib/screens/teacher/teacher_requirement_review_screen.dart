@@ -251,6 +251,14 @@ class _PhaseSection extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(
                 children: [
+                  if (phase.isFinalDetails)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        phase.finalDetailsNote,
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ),
                   for (final document in phase.documents)
                     TeacherRequirementDocReviewTile(
                       name: document.name,
