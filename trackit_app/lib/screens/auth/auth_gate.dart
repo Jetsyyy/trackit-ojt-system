@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/admin_auth_service.dart';
 import '../../services/api_client.dart';
@@ -38,9 +39,12 @@ class _AuthGateState extends State<AuthGate> {
     _checkSession();
   }
 
-  // The splash stays up at least this long on start-up, so the logo
-  // animation is seen instead of flashing past.
-  static const _minSplash = Duration(milliseconds: 1400);
+  // On phones the splash stays up for its whole intro (logo pop, then the
+  // school name rising) plus a short pause. On the website the page's own
+  // loading screen (web/index.html) has already played it, so no wait.
+  static final _minSplash = kIsWeb
+      ? Duration.zero
+      : TrackitSplash.introDuration + const Duration(milliseconds: 500);
 
   Future<void> _checkSession() async {
     final shown = Stopwatch()..start();
@@ -98,7 +102,7 @@ class _AuthGateState extends State<AuthGate> {
       switchOutCurve: Curves.easeIn,
       child: KeyedSubtree(
         key: ValueKey(_checking ? 'splash' : 'role-${_activeRole?.name ?? 'none'}'),
-        child: _checking ? const TrackitSplash() : _screen(),
+        child: _checking ? const TrackitSplash(playIntro: !kIsWeb) : _screen(),
       ),
     );
   }

@@ -34,27 +34,30 @@
   <title>TrackIT</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- TrackIT loading screen while the app downloads. It matches the app's
-       own splash (lib/widgets/common/trackit_splash.dart) and fades away on
-       the app's first frame. -->
+  <!-- TrackIT loading screen while the app downloads, in two beats: the
+       logo pops in, then the school name rises from the bottom into place.
+       The app's own splash (lib/widgets/common/trackit_splash.dart) looks the
+       same and takes over in its final pose, so nothing plays twice. -->
   <style>
     html, body { margin: 0; height: 100%; background: #4E0E19; }
     #trackit-splash {
-      position: fixed; inset: 0; z-index: 9999;
+      position: fixed; inset: 0; z-index: 9999; overflow: hidden;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 0 16px; box-sizing: border-box;
       background: radial-gradient(circle at 50% 42%, #8A1E30 0%, #6E1423 45%, #4E0E19 100%);
-      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif; text-align: center;
       transition: opacity .45s ease;
     }
     #trackit-splash.hide { opacity: 0; pointer-events: none; }
+    /* Beat 1: the logo pops in with a small overshoot, then breathes. */
     #trackit-splash .logo {
-      width: 250px; max-width: 62vw; height: auto;
-      animation: ts-in .7s cubic-bezier(.22,1,.36,1) both, ts-breath 1.8s ease-in-out .7s infinite alternate;
+      width: 250px; max-width: 56vw; height: auto;
+      animation: ts-pop .65s cubic-bezier(.34,1.56,.64,1) both, ts-breath 1.8s ease-in-out 1.7s infinite alternate;
     }
     #trackit-splash .bar {
       position: relative; overflow: hidden; width: 132px; height: 3px; margin-top: 26px;
       border-radius: 3px; background: rgba(255,255,255,.2);
-      animation: ts-fade .7s ease both;
+      animation: ts-fade .5s ease .42s both;
     }
     #trackit-splash .bar::after {
       content: ""; position: absolute; top: 0; bottom: 0; width: 46px; left: -46px;
@@ -63,19 +66,21 @@
     }
     #trackit-splash .tag {
       margin-top: 16px; color: rgba(255,255,255,.8); font-size: 11.5px; font-weight: 600; letter-spacing: 3px;
-      animation: ts-fade .7s ease both;
+      animation: ts-fade .5s ease .42s both;
     }
+    /* Beat 2: the school name rises from the bottom into the middle. */
     #trackit-splash .school {
-      position: absolute; left: 16px; right: 16px; bottom: 22px; text-align: center;
-      color: rgba(255,255,255,.6); font-size: 11.5px; font-weight: 600; line-height: 1.5;
+      margin-top: 30px; color: rgba(255,255,255,.9); font-size: 13.5px; font-weight: 700; line-height: 1.45;
+      animation: ts-rise .82s cubic-bezier(.22,1,.36,1) .88s both;
     }
-    #trackit-splash .school span { display: block; color: rgba(255,255,255,.45); font-size: 10.5px; font-weight: 400; }
-    @keyframes ts-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+    #trackit-splash .school span { display: block; margin-top: 3px; color: rgba(255,255,255,.65); font-size: 11.5px; font-weight: 400; }
+    @keyframes ts-pop { from { opacity: 0; transform: scale(.55); } 30% { opacity: 1; } to { opacity: 1; transform: scale(1); } }
     @keyframes ts-breath { from { transform: scale(1); } to { transform: scale(1.025); } }
     @keyframes ts-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ts-rise { from { opacity: 0; transform: translateY(260px); } 70% { opacity: 1; } to { opacity: 1; transform: none; } }
     @keyframes ts-sweep { from { left: -46px; } to { left: 132px; } }
     @media (prefers-reduced-motion: reduce) {
-      #trackit-splash .logo { animation: none; }
+      #trackit-splash .logo, #trackit-splash .bar, #trackit-splash .tag, #trackit-splash .school { animation: none; }
     }
   </style>
 </head>
@@ -87,14 +92,21 @@
     <div class="school">Dalubhasaan ng Lunsod ng San Pablo<span>College of Computer Studies and Technology</span></div>
   </div>
   <script>
-    // Hand over to the app once it has drawn its first frame (the app's
-    // own splash looks the same, so the swap is invisible).
-    window.addEventListener('flutter-first-frame', function () {
-      var el = document.getElementById('trackit-splash');
-      if (!el) return;
-      el.classList.add('hide');
-      setTimeout(function () { el.remove(); }, 500);
-    });
+    // Hand over to the app once it has drawn its first frame AND the intro
+    // above has finished (plus a short pause): about 2.2 s after the page
+    // started loading. The app shows the same screen underneath.
+    (function () {
+      var MIN_MS = 2200;
+      function hide() {
+        var el = document.getElementById('trackit-splash');
+        if (!el) return;
+        el.classList.add('hide');
+        setTimeout(function () { el.remove(); }, 500);
+      }
+      window.addEventListener('flutter-first-frame', function () {
+        setTimeout(hide, Math.max(0, MIN_MS - performance.now()));
+      });
+    })();
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
