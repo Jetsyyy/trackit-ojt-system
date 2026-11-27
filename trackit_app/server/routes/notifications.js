@@ -1,12 +1,15 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { sendDueReminders } = require('../utils/scheduledRequirements');
 
 const router = express.Router();
 router.use(requireAuth);
 
 router.get('/', async (req, res) => {
   try {
+    // Sends any day-before reminders that are due, so they show here.
+    await sendDueReminders().catch((e) => console.error('Due reminders error:', e.message));
     const result = await pool.query(
       'SELECT * FROM notifications WHERE receiver_id = $1 ORDER BY created_at DESC',
       [req.studentId],

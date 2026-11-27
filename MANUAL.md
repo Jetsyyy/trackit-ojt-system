@@ -146,6 +146,7 @@ Requires `trackit_app/.env` (see `trackit_app/.env.example`) with
 30. `migration_unique_sections.sql` (Faculty: one section per program + section + academic year)
 31. `migration_password_resets.sql` (Student Forgot Password: reset requests and the change-on-next-sign-in flag)
 32. `migration_documents_revision.sql` (System Revision 2: the official document list per stage, "download only" documents like MOU / MOA, Stage 4 Final Details form; old documents retired, their submissions kept)
+33. `migration_scheduled_requirements.sql` (Scheduled Requirements: the admin posts requirements like the Supervisor Evaluation Form per period with a due date and time for every student of an academic year; notifications when posted and the day before; late uploads flagged)
 
 All migrations are non-destructive (`ADD COLUMN IF NOT EXISTS`, etc.) and
 safe to re-run. Migrations 4 and 12 belong to the retired clock in/out

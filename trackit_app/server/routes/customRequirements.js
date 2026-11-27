@@ -6,6 +6,7 @@ const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { notifyInstructorForStudent } = require('../utils/notifyInstructor');
 const { requirementFileFilter } = require('../utils/requirementFileTypes');
+const { visibleToStudent, sendDueReminders } = require('../utils/scheduledRequirements');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -23,13 +24,13 @@ const upload = multer({
 // migration_teacher_documents.sql).
 router.get('/', async (req, res) => {
   try {
+    sendDueReminders().catch((e) => console.error('Due reminders error:', e.message));
+    // Instructor-made ones for the student's section, and the OJT office's
+    // scheduled requirements for their academic year (soonest due first).
     const requirementsResult = await pool.query(
       `SELECT cr.* FROM custom_requirements cr
-       JOIN custom_requirement_targets crt ON crt.custom_requirement_id = cr.id
-       JOIN instructor_classes ic ON ic.id = crt.class_id
-       JOIN student_profiles sp ON sp.class_id = ic.id
-       WHERE sp.student_id = $1
-       ORDER BY cr.created_at DESC`,
+       WHERE ${visibleToStudent(1)}
+       ORDER BY COALESCE(cr.due_at, cr.deadline::timestamptz) ASC NULLS LAST, cr.created_at DESC`,
       [req.studentId],
     );
     const submissionsResult = await pool.query(
@@ -47,6 +48,11 @@ router.get('/', async (req, res) => {
         name: requirement.title,
         description: requirement.description,
         deadline: requirement.deadline,
+        // Scheduled by the OJT office: period and exact due date and time.
+        fromOffice: requirement.audience === 'all_students',
+        period: requirement.period || null,
+        dueAt: requirement.due_at || null,
+        isLate: submission ? Boolean(submission.is_late) : false,
         templateUrl: requirement.template_url,
         templateName: requirement.template_name,
         status: submission ? submission.status : 'missing',
@@ -74,26 +80,26 @@ router.post('/:requirementId/submit', upload.single('file'), async (req, res) =>
     }
 
     const owns = await pool.query(
-      `SELECT cr.id FROM custom_requirements cr
-       JOIN custom_requirement_targets crt ON crt.custom_requirement_id = cr.id
-       JOIN instructor_classes ic ON ic.id = crt.class_id
-       JOIN student_profiles sp ON sp.class_id = ic.id
-       WHERE cr.id = $1 AND sp.student_id = $2`,
+      `SELECT cr.id, cr.due_at FROM custom_requirements cr
+       WHERE cr.id = $1 AND ${visibleToStudent(2)}`,
       [requirementId, req.studentId],
     );
     if (owns.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Requirement not found.' });
     }
+    // Uploads after the due date and time are accepted but marked late.
+    const dueAt = owns.rows[0].due_at;
+    const isLate = Boolean(dueAt && Date.now() > new Date(dueAt).getTime());
 
     const result = await pool.query(
       `INSERT INTO student_custom_requirement_submissions
-         (student_id, custom_requirement_id, status, uploaded_file_name, uploaded_file_url, submitted_at)
-       VALUES ($1, $2, 'submitted', $3, $4, now())
+         (student_id, custom_requirement_id, status, uploaded_file_name, uploaded_file_url, submitted_at, is_late)
+       VALUES ($1, $2, 'submitted', $3, $4, now(), $5)
        ON CONFLICT (student_id, custom_requirement_id)
        DO UPDATE SET status = 'submitted', uploaded_file_name = $3,
-         uploaded_file_url = $4, submitted_at = now(), updated_at = now()
+         uploaded_file_url = $4, submitted_at = now(), updated_at = now(), is_late = $5
        RETURNING *`,
-      [req.studentId, requirementId, fileName, fileUrl],
+      [req.studentId, requirementId, fileName, fileUrl, isLate],
     );
 
     try {
@@ -106,7 +112,7 @@ router.post('/:requirementId/submit', upload.single('file'), async (req, res) =>
       if (studentName && requirementName) {
         await notifyInstructorForStudent(req.studentId, {
           title: 'Requirement Submitted',
-          message: `${studentName} submitted "${requirementName}" for review.`,
+          message: `${studentName} submitted "${requirementName}" for review${isLate ? ' (late)' : ''}.`,
           relatedModule: 'requirements',
         });
       }

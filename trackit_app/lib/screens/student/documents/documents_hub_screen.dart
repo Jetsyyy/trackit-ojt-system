@@ -11,11 +11,16 @@ class DocumentsHubScreen extends StatelessWidget {
   final VoidCallback onOpenOjtRequirements;
   final VoidCallback onOpenWeeklySubmissions;
 
+  /// Requirements with deadlines: OJT office ones (e.g. evaluation forms
+  /// per period) and the instructor's Additional Requirements.
+  final VoidCallback onOpenScheduledRequirements;
+
   const DocumentsHubScreen({
     super.key,
     required this.onOpenHteDirectory,
     required this.onOpenOjtRequirements,
     required this.onOpenWeeklySubmissions,
+    required this.onOpenScheduledRequirements,
   });
 
   @override
@@ -47,6 +52,13 @@ class DocumentsHubScreen extends StatelessWidget {
                 image: 'assets/images/doc_weekly.jpg',
                 icon: Icons.calendar_month_outlined,
                 onTap: onOpenWeeklySubmissions,
+              ),
+              const SizedBox(height: 22),
+              _HubCard(
+                title: 'Scheduled Requirements',
+                image: 'assets/images/doc_requirements.jpg',
+                icon: Icons.event_note_outlined,
+                onTap: onOpenScheduledRequirements,
               ),
             ],
           ),

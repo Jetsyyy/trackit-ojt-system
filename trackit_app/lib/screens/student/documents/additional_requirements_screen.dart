@@ -5,6 +5,7 @@ import '../../../services/api_client.dart';
 import '../../../services/custom_requirements_service.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/attachment_launcher.dart';
+import '../../../utils/ph_time.dart';
 import '../../../utils/requirement_file_types.dart';
 import '../../../widgets/common/back_nav_header.dart';
 import '../../../widgets/common/empty_state_view.dart';
@@ -122,17 +123,17 @@ class _AdditionalRequirementsScreenState
       bottom: false,
       child: Column(
         children: [
-          const BackNavHeader(subtitle: 'Additional Requirements'),
+          const BackNavHeader(subtitle: 'Scheduled Requirements'),
           Expanded(
             child: _loading
                 ? const SkeletonList(count: 3)
                 : _requirements.isEmpty
                 ? const EmptyStateView(
                     icon: Icons.playlist_add_check_outlined,
-                    title: 'No Additional Requirements',
+                    title: 'Nothing Scheduled Yet',
                     message:
-                        'Your instructor hasn\'t posted any additional '
-                        'requirements yet.',
+                        'Requirements with deadlines from the OJT office or your instructor, '
+                        'like evaluation forms, will appear here.',
                   )
                 : RefreshIndicator(
                     color: AppColors.primaryMaroon,
@@ -151,17 +152,84 @@ class _AdditionalRequirementsScreenState
                                     ),
                                   ),
                                 )
-                              : RequirementDocTile(
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _DueBanner(requirement: requirement),
+                                    RequirementDocTile(
                                   document: requirement.toDoc(),
                                   onUpload: () => _upload(requirement),
                                   onView: () => _viewFile(requirement),
                                   onDownloadTemplate: requirement.templateUrl != null
                                       ? () => _downloadTemplate(requirement)
                                       : null,
+                                    ),
+                                  ],
                                 ),
                       ],
                     ),
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Period, who posted it and when it's due, above the document card:
+/// red once overdue (or submitted late), orange within a day.
+class _DueBanner extends StatelessWidget {
+  final CustomRequirement requirement;
+  const _DueBanner({required this.requirement});
+
+  @override
+  Widget build(BuildContext context) {
+    final r = requirement;
+    final due = r.dueAt ?? r.deadline;
+    final now = DateTime.now();
+    final overdue = due != null && !r.isDone && now.isAfter(r.dueAt ?? due.add(const Duration(days: 1)));
+    final soon = due != null && !r.isDone && !overdue && (r.dueAt ?? due).difference(now).inHours < 24;
+    final color = r.isLate || overdue
+        ? AppColors.statRedIcon
+        : soon
+            ? const Color(0xFFB85A1A)
+            : const Color(0xFF555555);
+    final dueText = due == null
+        ? 'No deadline'
+        : r.dueAt != null
+            ? 'Due ${formatPh(r.dueAt!, 'MMM d, yyyy · h:mm a')}'
+            : 'Due ${formatPh(due, 'MMM d, yyyy')}';
+    final state = r.isLate
+        ? 'Submitted late'
+        : overdue
+            ? 'Overdue'
+            : soon
+                ? 'Due soon'
+                : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7A1424),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              r.fromOffice ? (r.period?.isNotEmpty == true ? r.period! : 'OJT Office') : 'Instructor',
+              style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.schedule, size: 14, color: color),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              state == null ? dueText : '$dueText · $state',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
+            ),
           ),
         ],
       ),

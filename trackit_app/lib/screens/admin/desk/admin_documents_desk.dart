@@ -6,6 +6,7 @@ import '../../../utils/attachment_launcher.dart';
 import '../../../utils/ph_time.dart';
 import '../../../utils/requirement_file_types.dart';
 import '../../../widgets/common/desk_ui.dart';
+import 'admin_scheduled_requirements_panel.dart';
 
 /// Admin Documents (TrackIT admin mockups): the Requirements List grouped
 /// by stage on the left; the selected requirement's details and its
@@ -29,6 +30,9 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
   // Stage 4 (Final Details) panel, selected from the list instead of a document.
   int? _stageId;
   bool _busy = false;
+  // Stage requirements (the four stages) or Scheduled Requirements
+  // (evaluation forms etc. with a due date and time).
+  bool _scheduledTab = false;
 
   @override
   void initState() {
@@ -215,7 +219,25 @@ class _AdminDocumentsDeskState extends State<AdminDocumentsDesk> {
     return DeskPage(
       title: 'Documents',
       onRefresh: _load,
+      trailing: SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(value: false, icon: Icon(Icons.layers_outlined, size: 16), label: Text('Stage Requirements')),
+          ButtonSegment(value: true, icon: Icon(Icons.event_note_outlined, size: 16), label: Text('Scheduled Requirements')),
+        ],
+        selected: {_scheduledTab},
+        showSelectedIcon: false,
+        onSelectionChanged: (v) => setState(() => _scheduledTab = v.first),
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: const Color(0xFF7A1424),
+          selectedForegroundColor: Colors.white,
+          foregroundColor: const Color(0xFF7A1424),
+          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        ),
+      ),
       children: [
+        if (_scheduledTab)
+          AdminScheduledRequirementsPanel(client: widget.client)
+        else
         SizedBox(
           height: height < 620 ? 620 : height,
           child: _loading

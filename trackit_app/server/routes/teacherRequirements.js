@@ -4,6 +4,7 @@ const { requireInstructorAuth } = require('../middleware/instructorAuth');
 const { loadAssignedStudents } = require('./teacherStudents');
 
 const { REQUIRED_TEMPLATES, loadPhasesAndTemplates, buildPhases, companyConfirmedFor } = require('../utils/requirementPhases');
+const { visibleToStudent, formatDue } = require('../utils/scheduledRequirements');
 
 const router = express.Router();
 router.use(requireInstructorAuth);
@@ -158,23 +159,30 @@ router.get('/students/:studentId', async (req, res) => {
     const customResult = await pool.query(
       `SELECT cr.*, scs.id AS submission_id, scs.status AS submission_status,
               scs.uploaded_file_name, scs.uploaded_file_url, scs.submitted_at,
-              scs.reviewed_at, scs.remarks
+              scs.reviewed_at, scs.remarks, scs.is_late
        FROM custom_requirements cr
-       JOIN custom_requirement_targets crt ON crt.custom_requirement_id = cr.id
-       JOIN instructor_classes ic ON ic.id = crt.class_id
-       JOIN student_profiles sp ON sp.class_id = ic.id
        LEFT JOIN student_custom_requirement_submissions scs
          ON scs.custom_requirement_id = cr.id AND scs.student_id = $1
-       WHERE sp.student_id = $1 AND cr.instructor_id = $2
-       ORDER BY cr.created_at DESC`,
+       WHERE ${visibleToStudent(1)}
+         AND (cr.instructor_id = $2 OR cr.audience = 'all_students')
+       ORDER BY COALESCE(cr.due_at, cr.created_at) DESC`,
       [studentId, req.instructorId],
     );
     const customRequirements = customResult.rows.map((row) => ({
       id: Number(row.id),
       submissionId: row.submission_id ? Number(row.submission_id) : null,
-      name: row.title,
-      description: row.description,
+      name: row.period ? `${row.title} (${row.period})` : row.title,
+      // OJT office requirements: who posted it, the due time and lateness.
+      description: row.audience === 'all_students'
+        ? [
+            `From the OJT office${row.due_at ? ` · due ${formatDue(row.due_at)}` : ''}${row.is_late ? ' · submitted late' : ''}`,
+            row.description,
+          ].filter(Boolean).join('\n')
+        : row.description,
       deadline: row.deadline,
+      dueAt: row.due_at || null,
+      fromOffice: row.audience === 'all_students',
+      isLate: Boolean(row.is_late),
       status: row.submission_status || 'missing',
       uploadedFileName: row.uploaded_file_name,
       uploadedFileUrl: row.uploaded_file_url,
@@ -281,7 +289,13 @@ router.patch('/custom-submissions/:submissionId', async (req, res) => {
     const existing = await pool.query(
       `SELECT scs.*, cr.title FROM student_custom_requirement_submissions scs
        JOIN custom_requirements cr ON cr.id = scs.custom_requirement_id
-       WHERE scs.id = $1 AND cr.instructor_id = $2`,
+       WHERE scs.id = $1 AND (
+         cr.instructor_id = $2
+         -- OJT office requirements: for the instructor's own students.
+         OR (cr.audience = 'all_students' AND EXISTS (
+           SELECT 1 FROM student_profiles sp JOIN instructor_classes ic ON ic.id = sp.class_id
+           WHERE sp.student_id = scs.student_id AND ic.instructor_id = $2))
+       )`,
       [submissionId, req.instructorId],
     );
     if (existing.rows.length === 0) {

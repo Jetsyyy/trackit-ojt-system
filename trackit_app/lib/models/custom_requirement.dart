@@ -1,8 +1,9 @@
 import 'ojt_requirement_doc.dart';
 
-/// An instructor-created "Additional Requirement", as the student sees
-/// it -- same submit/status flow as the fixed Official Requirements, just
-/// sourced from custom_requirements instead of ojt_requirement_templates.
+/// A requirement with a deadline, as the student sees it: either one the
+/// OJT office scheduled for everyone (e.g. "Supervisor Evaluation Form",
+/// 1st Semester) or an instructor's Additional Requirement for the section.
+/// Same submit/status flow as the Official Requirements.
 class CustomRequirement {
   final String id;
   final String name;
@@ -16,6 +17,18 @@ class CustomRequirement {
   final DateTime? submittedAt;
   final String? remarks;
 
+  /// Posted by the OJT office for all students (vs. by the instructor).
+  final bool fromOffice;
+
+  /// e.g. "1st Semester", "Final".
+  final String? period;
+
+  /// Exact due date and time (OJT office requirements).
+  final DateTime? dueAt;
+
+  /// The upload came in after [dueAt].
+  final bool isLate;
+
   const CustomRequirement({
     required this.id,
     required this.name,
@@ -28,7 +41,14 @@ class CustomRequirement {
     this.uploadedFileUrl,
     this.submittedAt,
     this.remarks,
+    this.fromOffice = false,
+    this.period,
+    this.dueAt,
+    this.isLate = false,
   });
+
+  bool get isDone =>
+      status == RequirementDocStatus.submitted || status == RequirementDocStatus.approved;
 
   factory CustomRequirement.fromJson(Map<String, dynamic> json) {
     return CustomRequirement(
@@ -48,6 +68,10 @@ class CustomRequirement {
           ? DateTime.parse(json['submittedAt'] as String)
           : null,
       remarks: json['remarks'] as String?,
+      fromOffice: json['fromOffice'] as bool? ?? false,
+      period: json['period'] as String?,
+      dueAt: json['dueAt'] != null ? DateTime.parse(json['dueAt'] as String).toLocal() : null,
+      isLate: json['isLate'] as bool? ?? false,
     );
   }
 

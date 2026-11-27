@@ -109,6 +109,8 @@ class DocumentsTabNavigatorState extends State<DocumentsTabNavigator> {
                 onOpenOjtRequirements: () =>
                     _navigatorKey.currentState?.pushNamed('/ojt-requirements'),
                 onOpenWeeklySubmissions: () => _navigatorKey.currentState?.pushNamed('/weekly'),
+                onOpenScheduledRequirements: () =>
+                    _navigatorKey.currentState?.pushNamed('/additional-requirements'),
               );
           }
           return MaterialPageRoute(builder: (_) => StudentBackdrop(child: page), settings: settings);
