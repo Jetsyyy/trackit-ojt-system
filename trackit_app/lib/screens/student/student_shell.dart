@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/motion.dart';
 import '../../models/notification.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/student.dart';
@@ -201,7 +202,7 @@ class _StudentShellState extends State<StudentShell> {
       unreadCount: () => _notificationsService.unreadCount,
       child: Scaffold(
         backgroundColor: StudentColors.page,
-        body: IndexedStack(index: _navIndex, children: pages),
+        body: FadeIndexedStack(index: _navIndex, children: pages),
         bottomNavigationBar: AppBottomNav(
           items: const [
             AppBottomNavItem(icon: Icons.description_outlined, label: 'Document'),

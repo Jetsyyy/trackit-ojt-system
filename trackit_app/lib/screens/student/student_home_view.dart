@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/motion.dart';
 import '../../models/notification.dart';
 import '../../models/ojt_progress.dart';
 import '../../models/student.dart';
@@ -60,7 +61,7 @@ class StudentHomeView extends StatelessWidget {
           const StudentHeader(title: 'Home', subtitle: 'Personal Dashboard'),
           Padding(
             padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
-            child: Column(
+            child: StaggeredColumn(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _ProfileCard(student: student),

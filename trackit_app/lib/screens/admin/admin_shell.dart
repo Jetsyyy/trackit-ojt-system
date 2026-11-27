@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/motion.dart';
 import '../../models/admin_profile.dart';
 import '../../services/api_client.dart';
 import '../../utils/app_colors.dart';
@@ -133,7 +134,7 @@ class _AdminShellState extends State<AdminShell> {
       AdminArchiveDesk(client: widget.client, adminEmail: _admin.email),
       AdminProfileScreen(client: widget.client, admin: _admin, onProfileUpdated: _updateAdmin),
     ];
-    final body = IndexedStack(index: _index, children: pages);
+    final body = FadeIndexedStack(index: _index, children: pages);
 
     return LayoutBuilder(
       builder: (context, constraints) {

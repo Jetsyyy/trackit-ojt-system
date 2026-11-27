@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import '../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import '../../services/admin_requirements_service.dart';
 import '../../services/api_client.dart';
@@ -129,10 +129,9 @@ class _AdminRequirementsScreenState extends State<AdminRequirementsScreen> {
   }
 
   Future<void> _uploadTemplate(AdminRequirement requirement) async {
-    final picked = await FilePicker.pickFiles(
+    final picked = await pickFilesWithData(
       type: FileType.custom,
       allowedExtensions: requirementFileExtensions,
-      withData: true,
     );
     if (picked == null || picked.files.isEmpty || !mounted) return;
     final file = picked.files.single;

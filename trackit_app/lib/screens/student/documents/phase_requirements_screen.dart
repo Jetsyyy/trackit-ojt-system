@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import '../../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import '../../../models/ojt_requirement_doc.dart';
 import '../../../models/ojt_requirement_phase.dart';
@@ -72,10 +72,9 @@ class _PhaseRequirementsScreenState extends State<PhaseRequirementsScreen> {
   }
 
   Future<void> _upload(OjtRequirementDoc document) async {
-    final result = await FilePicker.pickFiles(
+    final result = await pickFilesWithData(
       type: FileType.custom,
       allowedExtensions: requirementFileExtensions,
-      withData: true,
     );
     if (result == null || result.files.isEmpty || !mounted) return;
     final file = result.files.single;

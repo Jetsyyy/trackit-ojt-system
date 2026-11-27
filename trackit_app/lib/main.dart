@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'widgets/common/motion.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'screens/auth/auth_gate.dart';
 
@@ -36,6 +37,7 @@ class MainApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: GoogleFonts.inter().fontFamily,
+        pageTransitionsTheme: fadeRisePageTransitions,
       ),
       home: const AuthGate(),
     );

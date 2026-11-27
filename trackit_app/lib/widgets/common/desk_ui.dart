@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/app_colors.dart';
+import 'motion.dart';
 
 /// Shared building blocks for the wide-screen (laptop/desktop) layouts
 /// that follow the TrackIT instructor mockups: warm grey page, white
@@ -102,7 +103,7 @@ class DeskPage extends StatelessWidget {
             children: [Expanded(child: heading), ?trailing],
           ),
         SizedBox(height: narrow ? 16 : 20),
-        ...children,
+        ...staggered(children, startOrder: 1),
       ],
     );
     return DeskBackdrop(

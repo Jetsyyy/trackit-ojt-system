@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/motion.dart';
 import '../../models/teacher_dashboard.dart';
 import '../../services/api_client.dart';
 import '../../services/teacher_announcements_service.dart';
@@ -153,7 +154,7 @@ class _TeacherShellState extends State<TeacherShell> {
       ),
     ];
 
-    final body = IndexedStack(index: _navIndex, children: pages);
+    final body = FadeIndexedStack(index: _navIndex, children: pages);
 
     // System Revisions item 12: on a desktop or laptop the bottom nav
     // becomes a left sidebar and the content is centred at a readable

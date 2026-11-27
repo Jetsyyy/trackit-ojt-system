@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import '../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import '../../models/admin_announcement.dart';
 import '../../services/admin_announcements_service.dart';
@@ -48,7 +48,7 @@ class _AdminAnnouncementFormState extends State<AdminAnnouncementForm> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   AdminAnnouncementAudience _audience = AdminAnnouncementAudience.all;
-  PlatformFile? _pickedFile;
+  PickedFile? _pickedFile;
   bool _picking = false;
   bool _saving = false;
 
@@ -62,10 +62,9 @@ class _AdminAnnouncementFormState extends State<AdminAnnouncementForm> {
   Future<void> _pickAttachment() async {
     setState(() => _picking = true);
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await pickFilesWithData(
         type: FileType.custom,
         allowedExtensions: _allowedExtensions,
-        withData: true,
       );
       if (result == null || result.files.isEmpty || !mounted) return;
       final file = result.files.single;

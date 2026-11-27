@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
+import '../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import '../../utils/password_rules.dart';
 import '../../widgets/common/password_guide.dart';
@@ -108,10 +108,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           Future<void> pickAvatar() async {
-            final result = await FilePicker.pickFiles(
+            final result = await pickFilesWithData(
               type: FileType.custom,
               allowedExtensions: const ['jpg', 'jpeg', 'png'],
-              withData: true,
             );
             if (result == null || result.files.isEmpty) return;
             final file = result.files.single;

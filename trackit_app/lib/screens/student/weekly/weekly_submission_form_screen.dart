@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
+import '../../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -97,11 +97,10 @@ class _WeeklySubmissionFormScreenState extends State<WeeklySubmissionFormScreen>
       _snack('You can attach up to $weeklyMaxFilesPerKind files for the $label.', error: true);
       return;
     }
-    final result = await FilePicker.pickFiles(
+    final result = await pickFilesWithData(
       type: FileType.custom,
       allowedExtensions: weeklyFileExtensions,
       allowMultiple: true,
-      withData: true,
     );
     if (result == null || !mounted) return;
     final skipped = <String>[];

@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import '../../../utils/pick_files.dart';
 import 'package:flutter/material.dart';
 import '../../../services/admin_requirements_service.dart';
 import '../../../services/api_client.dart';
@@ -620,11 +620,10 @@ String _size(int bytes) {
   return '${(bytes / 1024).ceil()} KB';
 }
 
-Future<PlatformFile?> _pickTemplate() async {
-  final picked = await FilePicker.pickFiles(
+Future<PickedFile?> _pickTemplate() async {
+  final picked = await pickFilesWithData(
     type: FileType.custom,
     allowedExtensions: requirementFileExtensions,
-    withData: true,
   );
   final file = picked?.files.single;
   if (file == null || file.bytes == null) return null;
@@ -690,7 +689,7 @@ class _RequirementForm {
   final int copies;
   final String description;
   final String? issuedBy;
-  final PlatformFile? file;
+  final PickedFile? file;
 
   const _RequirementForm({
     required this.name,
@@ -720,7 +719,7 @@ class _RequirementDialogState extends State<_RequirementDialog> {
   late final _office = TextEditingController(text: widget.existing?.issuedBy ?? '');
   late int? _phaseId = widget.existing?.phaseId ?? widget.initialPhaseId ?? widget.phases.firstOrNull?.id;
   late int _copies = widget.existing?.copiesRequired ?? 1;
-  PlatformFile? _file;
+  PickedFile? _file;
   String? _error;
 
   @override
@@ -1007,7 +1006,7 @@ class _StepButton extends StatelessWidget {
 /// Replace Template (mockup): confirms the newly chosen file.
 class _ReplaceDialog extends StatelessWidget {
   final AdminRequirement requirement;
-  final PlatformFile file;
+  final PickedFile file;
 
   const _ReplaceDialog({required this.requirement, required this.file});
 
