@@ -3,6 +3,7 @@ import '../../../models/hte_company.dart';
 import '../../../services/admin_hte_companies_service.dart';
 import '../../../services/api_client.dart';
 import '../../../utils/file_download.dart';
+import '../../../widgets/admin/hte_merge_dialog.dart';
 import '../../../widgets/common/desk_ui.dart';
 import '../admin_hte_company_form_screen.dart';
 
@@ -40,6 +41,7 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
   int? _expanded;
   bool _withStudents = true;
   bool _generating = false;
+  int _duplicateGroups = 0;
 
   @override
   void initState() {
@@ -50,9 +52,12 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
   Future<void> _load() async {
     try {
       final companies = await _service.getCompanies();
+      // Only for the "possible duplicates" hint; never blocks the page.
+      final groups = await _service.getDuplicates().catchError((_) => <HteDuplicateGroup>[]);
       if (!mounted) return;
       setState(() {
         _companies = companies;
+        _duplicateGroups = groups.length;
         _loading = false;
         _error = null;
       });
@@ -188,6 +193,43 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result)));
   }
 
+  Future<void> _openMerge() async {
+    final changed = await showHteMergeDialog(context, api: _service, companies: _companies);
+    if (changed) await _load();
+  }
+
+  Widget _duplicatesBanner() {
+    final n = _duplicateGroups;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDEBDD),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE8843A).withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.content_copy_outlined, size: 16, color: Color(0xFFB85A1A)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              n == 1
+                  ? 'Some companies look like duplicates (1 group). Merge them so students are listed under one record.'
+                  : 'Some companies look like duplicates ($n groups). Merge them so students are listed under one record.',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8A4310)),
+            ),
+          ),
+          TextButton(
+            onPressed: _openMerge,
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF8A4310)),
+            child: const Text('Review', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _delete(HteCompany company) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -241,11 +283,22 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
             Expanded(
               child: DeskCard(
                 title: 'Partner Companies',
-                trailing: TextButton.icon(
-                  onPressed: () => _openForm(),
-                  style: TextButton.styleFrom(foregroundColor: DeskColors.maroon),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add Company', style: TextStyle(fontSize: 12)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _loading ? null : _openMerge,
+                      style: TextButton.styleFrom(foregroundColor: DeskColors.maroon),
+                      icon: const Icon(Icons.merge_type, size: 16),
+                      label: const Text('Merge Duplicates', style: TextStyle(fontSize: 12)),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _openForm(),
+                      style: TextButton.styleFrom(foregroundColor: DeskColors.maroon),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Company', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
                 ),
                 child: _loading
                     ? const SizedBox(height: 300, child: Center(child: CircularProgressIndicator(color: DeskColors.maroon)))
@@ -254,6 +307,7 @@ class _AdminHteDirectoryDeskState extends State<AdminHteDirectoryDesk> {
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              if (_duplicateGroups > 0) _duplicatesBanner(),
                               _filters(),
                               const SizedBox(height: 12),
                               _tableHeader(),

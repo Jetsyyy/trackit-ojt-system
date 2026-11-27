@@ -1,8 +1,9 @@
 import '../models/hte_company.dart';
 import '../models/hte_company_contact.dart';
 import 'api_client.dart';
+import '../widgets/admin/hte_merge_dialog.dart';
 
-abstract class AdminHteCompaniesService {
+abstract class AdminHteCompaniesService implements HteMergeApi {
   Future<List<HteCompany>> getCompanies();
 
   Future<HteCompany> createCompany({
@@ -133,6 +134,33 @@ class HttpAdminHteCompaniesService implements AdminHteCompaniesService {
   @override
   Future<void> deleteCompany(int id) async {
     await client.delete('/api/admin/hte-companies/$id');
+  }
+
+  @override
+  Future<List<HteDuplicateGroup>> getDuplicates() async {
+    final response = await client.get('/api/admin/hte-companies/duplicates');
+    return (response['groups'] as List<dynamic>)
+        .map((g) => HteDuplicateGroup.fromJson(g as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<HteMergePreview> previewMerge({required int keepId, required List<int> mergeIds}) async {
+    final response = await client.post(
+      '/api/admin/hte-companies/$keepId/merge',
+      body: {'mergeIds': mergeIds, 'dryRun': true},
+    );
+    final moving = response['moving'] as Map<String, dynamic>? ?? const {};
+    return HteMergePreview(
+      students: (moving['students'] as num?)?.toInt() ?? 0,
+      reports: (moving['reports'] as num?)?.toInt() ?? 0,
+      supervisors: (moving['supervisors'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  @override
+  Future<void> merge({required int keepId, required List<int> mergeIds}) async {
+    await client.post('/api/admin/hte-companies/$keepId/merge', body: {'mergeIds': mergeIds});
   }
 
   @override

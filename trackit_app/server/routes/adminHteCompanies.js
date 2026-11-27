@@ -2,7 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const { getCurrentAcademicYear } = require('../utils/classHelpers');
-const { regionOf, matchesLocation, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
+const { regionOf, matchesLocation, sameCompany, loadDirectoryWithPlacements } = require('../utils/hteDirectory');
 const { sendHteReport, groupByLocation } = require('../utils/hteReport');
 
 const router = express.Router();
@@ -247,6 +247,180 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('Delete HTE company error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete company.' });
+  }
+});
+
+// ------------------------------------------------------------ merging
+// Duplicate companies (e.g. a student typed "Community General Hospital"
+// before the admin's "Community General Hospital of San Pablo City, Inc."
+// existed in the directory) are merged into one record: students, weekly
+// reports and supervisors move to the kept company, its blank details are
+// filled from the others, new contacts are copied, then the others are
+// removed.
+
+// Everything that points at each company, for the merge preview.
+async function usageCounts(db, ids) {
+  const { rows } = await db.query(
+    `SELECT c.id, c.name, c.location, c.address, c.source,
+            (SELECT COUNT(*) FROM students s WHERE s.company_id = c.id)::int AS students,
+            (SELECT COUNT(*) FROM activity_reports a WHERE a.company_id = c.id)::int AS reports,
+            (SELECT COUNT(*) FROM supervisors x WHERE x.company_id = c.id)::int AS supervisors,
+            (SELECT COUNT(*) FROM hte_company_contacts x WHERE x.company_id = c.id)::int AS contacts
+     FROM hte_companies c
+     WHERE ($1::bigint[] IS NULL OR c.id = ANY($1::bigint[]))
+     ORDER BY c.id`,
+    [ids],
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    name: r.name,
+    location: r.location,
+    address: r.address,
+    source: r.source,
+    students: r.students,
+    reports: r.reports,
+    supervisors: r.supervisors,
+    contacts: r.contacts,
+  }));
+}
+
+// Which one to keep: the admin's record first, then the one with more
+// students, then the older one.
+function preferred(a, b) {
+  if ((a.source === 'admin') !== (b.source === 'admin')) return a.source === 'admin' ? -1 : 1;
+  if (a.students !== b.students) return b.students - a.students;
+  return a.id - b.id;
+}
+
+// Groups of companies whose names look like the same company.
+router.get('/duplicates', async (req, res) => {
+  try {
+    const all = await usageCounts(pool, null);
+    const parent = new Map(all.map((c) => [c.id, c.id]));
+    const find = (x) => (parent.get(x) === x ? x : find(parent.get(x)));
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        if (sameCompany(all[i].name, all[j].name)) parent.set(find(all[i].id), find(all[j].id));
+      }
+    }
+    const groups = new Map();
+    for (const c of all) {
+      const root = find(c.id);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(c);
+    }
+    const result = [...groups.values()]
+      .filter((g) => g.length > 1)
+      .map((g) => {
+        const companies = [...g].sort(preferred);
+        return { keepId: companies[0].id, companies };
+      });
+    res.json({ success: true, groups: result });
+  } catch (error) {
+    console.error('Find duplicate HTE companies error:', error);
+    res.status(500).json({ success: false, message: 'Failed to look for duplicates.' });
+  }
+});
+
+// Merges mergeIds into :id. With dryRun, only reports what would move.
+router.post('/:id/merge', async (req, res) => {
+  const keepId = Number(req.params.id);
+  const mergeIds = [...new Set((req.body.mergeIds || []).map(Number))].filter((n) => Number.isInteger(n) && n > 0);
+  if (!Number.isInteger(keepId) || keepId <= 0) {
+    return res.status(400).json({ success: false, message: 'Choose the company to keep.' });
+  }
+  if (mergeIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'Choose at least one company to merge into it.' });
+  }
+  if (mergeIds.includes(keepId)) {
+    return res.status(400).json({ success: false, message: "A company can't be merged into itself." });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Lock the rows so two admins can't merge the same companies at once.
+    const locked = await client.query('SELECT * FROM hte_companies WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE', [
+      [keepId, ...mergeIds],
+    ]);
+    const byId = new Map(locked.rows.map((r) => [Number(r.id), r]));
+    if (!byId.has(keepId)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'The company to keep no longer exists.' });
+    }
+    const missing = mergeIds.filter((id) => !byId.has(id));
+    if (missing.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Some of those companies no longer exist. Refresh and try again.' });
+    }
+
+    const usage = await usageCounts(client, mergeIds);
+    const moving = usage.reduce(
+      (t, u) => ({
+        students: t.students + u.students,
+        reports: t.reports + u.reports,
+        supervisors: t.supervisors + u.supervisors,
+      }),
+      { students: 0, reports: 0, supervisors: 0 },
+    );
+    if (req.body.dryRun) {
+      await client.query('ROLLBACK');
+      return res.json({ success: true, dryRun: true, keep: { id: keepId, name: byId.get(keepId).name }, merging: usage, moving });
+    }
+
+    await client.query('UPDATE students SET company_id = $1, updated_at = now() WHERE company_id = ANY($2::bigint[])', [keepId, mergeIds]);
+    await client.query('UPDATE activity_reports SET company_id = $1 WHERE company_id = ANY($2::bigint[])', [keepId, mergeIds]);
+    await client.query('UPDATE supervisors SET company_id = $1 WHERE company_id = ANY($2::bigint[])', [keepId, mergeIds]);
+
+    // Contacts the kept company doesn't already have (same name and number).
+    const digits = (v) => (v || '').toString().replace(/\D/g, '');
+    const key = (c) => `${(c.name || '').trim().toLowerCase()}|${digits(c.phone)}`;
+    const have = new Set(
+      (await client.query('SELECT name, phone FROM hte_company_contacts WHERE company_id = $1', [keepId])).rows.map(key),
+    );
+    const theirs = (
+      await client.query('SELECT id, name, phone FROM hte_company_contacts WHERE company_id = ANY($1::bigint[]) ORDER BY id', [mergeIds])
+    ).rows;
+    let contactsAdded = 0;
+    for (const c of theirs) {
+      if (have.has(key(c))) continue;
+      have.add(key(c));
+      await client.query('UPDATE hte_company_contacts SET company_id = $1 WHERE id = $2', [keepId, c.id]);
+      contactsAdded++;
+    }
+
+    // Fill the kept company's blank details from the merged ones.
+    const blank = (v) => v == null || (typeof v === 'string' && (!v.trim() || v.trim() === 'Not specified'));
+    const keep = byId.get(keepId);
+    const fillable = ['industry', 'address', 'location', 'email', 'phone', 'website', 'description', 'date_accredited', 'available_positions', 'available_slots'];
+    const updates = {};
+    for (const col of fillable) {
+      if (!(col in keep) || !blank(keep[col])) continue;
+      const donor = mergeIds.map((id) => byId.get(id)).find((r) => !blank(r[col]));
+      if (donor) updates[col] = donor[col];
+    }
+    const cols = Object.keys(updates);
+    if (cols.length) {
+      await client.query(
+        `UPDATE hte_companies SET ${cols.map((c, i) => `"${c}" = $${i + 2}`).join(', ')}, updated_at = now() WHERE id = $1`,
+        [keepId, ...cols.map((c) => updates[c])],
+      );
+    }
+
+    await client.query('DELETE FROM hte_companies WHERE id = ANY($1::bigint[])', [mergeIds]);
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      keep: { id: keepId, name: keep.name },
+      merged: usage.map((u) => u.name),
+      moved: { ...moving, contacts: contactsAdded },
+      filled: cols,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Merge HTE companies error:', error);
+    res.status(500).json({ success: false, message: 'Failed to merge the companies.' });
+  } finally {
+    client.release();
   }
 });
 
